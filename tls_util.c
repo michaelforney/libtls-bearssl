@@ -67,14 +67,10 @@ tls_host_port(const char *hostport, char **host, char **port)
 
 	*p++ = '\0';
 
-	if (asprintf(host, "%s", h) == -1) {
-		*host = NULL;
+	if ((*host = strdup(h)) == NULL)
 		goto err;
-	}
-	if (asprintf(port, "%s", p) == -1) {
-		*port = NULL;
+	if ((*port = strdup(p)) == NULL)
 		goto err;
-	}
 
 	rv = 0;
 	goto done;
