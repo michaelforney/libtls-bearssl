@@ -41,6 +41,7 @@ int
 tls_keypair_set_cert_file(struct tls_keypair *keypair, struct tls_error *error,
     const char *cert_file)
 {
+	int rv = -1;
 	char *cert = NULL;
 	size_t len;
 
@@ -51,10 +52,11 @@ tls_keypair_set_cert_file(struct tls_keypair *keypair, struct tls_error *error,
 	if (tls_keypair_set_cert_mem(keypair, error, (uint8_t *)cert, len) != 0)
 		goto err;
 
+	rv = 0;
+
  err:
 	free(cert);
-
-	return 0;
+	return rv;
 }
 
 struct cert_pem_ctx {
@@ -143,6 +145,8 @@ tls_keypair_set_cert_mem(struct tls_keypair *keypair, struct tls_error *error,
 	keypair->chain = chain;
 	keypair->chain_len = chain_len;
 	chain = NULL;
+
+	rv = 0;
 	
  err:
 	free(chain);
