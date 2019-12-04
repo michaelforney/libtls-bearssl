@@ -484,7 +484,7 @@ tls_configure_x509(struct tls *ctx)
 	/* If no CA has been specified, attempt to load the default. */
 	if (ctx->config->verify_cert != 0 &&
 	    ctx->config->ca == NULL &&
-	    tls_config_set_cert_file(ctx->config, tls_default_ca_cert_file()) != 0) {
+	    tls_config_set_ca_file(ctx->config, tls_default_ca_cert_file()) != 0) {
 		tls_set_errorx(ctx, "CA load failed");
 		goto err;
 	}
