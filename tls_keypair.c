@@ -245,9 +245,6 @@ tls_keypair_set_key_mem(struct tls_keypair *keypair, struct tls_error *error,
 
 		ptr = data;
 
-		printf("p %% 4: %d\n", rsa->p[rsa->plen - 1] % 4);
-		printf("q %% 4: %d\n", rsa->q[rsa->qlen - 1] % 4);
-
 		keypair->key.rsa.p = ptr;
 		memcpy(ptr, rsa->p, rsa->plen);
 		ptr += rsa->plen;
