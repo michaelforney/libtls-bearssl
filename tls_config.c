@@ -468,6 +468,8 @@ tls_config_set_cert_mem(struct tls_config *config, const uint8_t *cert,
 int
 tls_config_set_ciphers(struct tls_config *config, const char *ciphers)
 {
+	int rv = -1;
+
 	if (ciphers == NULL ||
 	    strcasecmp(ciphers, "default") == 0 ||
 	    strcasecmp(ciphers, "secure") == 0)
@@ -480,8 +482,16 @@ tls_config_set_ciphers(struct tls_config *config, const char *ciphers)
 	    strcasecmp(ciphers, "insecure") == 0)
 		ciphers = TLS_CIPHERS_ALL;
 
-	return bearssl_parse_ciphers(ciphers, (uint16_t **)&config->suites,
-	    &config->suites_len);
+	if (bearssl_parse_ciphers(ciphers, (uint16_t **)&config->suites,
+	    &config->suites_len) != 0) {
+		tls_config_set_errorx(config, "failed to parse cipher list");
+		goto err;
+	}
+
+	rv = 0;
+
+ err:
+	return rv;
 }
 
 int
