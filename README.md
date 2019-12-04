@@ -1,5 +1,7 @@
 # libtls-bearssl
 
+[![builds.sr.ht status](https://builds.sr.ht/~mcf/libtls-bearssl.svg)](https://builds.sr.ht/~mcf/libtls-bearssl)
+
 libtls-bearssl is an implementation of [libtls] on top of [BearSSL].
 
 BearSSL is an excellent TLS library: it is small, secure by default,
