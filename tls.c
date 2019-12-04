@@ -20,16 +20,10 @@
 #include <errno.h>
 #include <limits.h>
 #include <pthread.h>
+#include <stdarg.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <unistd.h>
-
-#include <openssl/bio.h>
-#include <openssl/err.h>
-#include <openssl/evp.h>
-#include <openssl/pem.h>
-#include <openssl/safestack.h>
-#include <openssl/ssl.h>
-#include <openssl/x509.h>
 
 #include <tls.h>
 #include "tls_internal.h"
@@ -41,11 +35,6 @@ static int tls_init_rv = -1;
 static void
 tls_do_init(void)
 {
-	OPENSSL_init_ssl(OPENSSL_INIT_NO_LOAD_CONFIG, NULL);
-
-	if (BIO_sock_init() != 1)
-		return;
-
 	if ((tls_config_default = tls_config_new_internal()) == NULL)
 		return;
 
@@ -214,24 +203,6 @@ tls_set_ssl_errorx(struct tls *ctx, const char *fmt, ...)
 	return (rv);
 }
 
-struct tls_sni_ctx *
-tls_sni_ctx_new(void)
-{
-	return (calloc(1, sizeof(struct tls_sni_ctx)));
-}
-
-void
-tls_sni_ctx_free(struct tls_sni_ctx *sni_ctx)
-{
-	if (sni_ctx == NULL)
-		return;
-
-	SSL_CTX_free(sni_ctx->ssl_ctx);
-	X509_free(sni_ctx->ssl_cert);
-
-	free(sni_ctx);
-}
-
 struct tls *
 tls_new(void)
 {
@@ -253,6 +224,8 @@ tls_new(void)
 int
 tls_configure(struct tls *ctx, struct tls_config *config)
 {
+	int rv = -1;
+
 	if (config == NULL)
 		config = tls_config_default;
 
@@ -265,25 +238,31 @@ tls_configure(struct tls *ctx, struct tls_config *config)
 	ctx->config = config;
 	ctx->keypair = config->keypair;
 
-	if ((ctx->flags & TLS_SERVER) != 0)
-		return (tls_configure_server(ctx));
+	if (tls_keypair_check(ctx->keypair, &ctx->error) != 0)
+		goto err;
 
-	return (0);
+	rv = 0;
+
+ err:
+	return (rv);
 }
 
 int
-tls_cert_hash(X509 *cert, char **hash)
+tls_cert_hash(br_x509_certificate *cert, char **hash)
 {
-	char d[EVP_MAX_MD_SIZE], *dhex = NULL;
-	int dlen, rv = -1;
+	br_sha256_context ctx;
+	unsigned char d[br_sha256_SIZE];
+	char *dhex = NULL;
+	int rv = -1;
 
 	free(*hash);
 	*hash = NULL;
 
-	if (X509_digest(cert, EVP_sha256(), d, &dlen) != 1)
-		goto err;
+	br_sha256_init(&ctx);
+	br_sha256_update(&ctx, cert->data, cert->data_len);
+	br_sha256_out(&ctx, d);
 
-	if (tls_hex_string(d, dlen, &dhex, NULL) != 0)
+	if (tls_hex_string(d, sizeof(d), &dhex, NULL) != 0)
 		goto err;
 
 	if (asprintf(hash, "SHA256:%s", dhex) == -1) {
@@ -298,269 +277,234 @@ tls_cert_hash(X509 *cert, char **hash)
 	return (rv);
 }
 
-int
-tls_cert_pubkey_hash(X509 *cert, char **hash)
+static void
+x509_start_chain(const br_x509_class **vtable, const char *server_name)
 {
-	char d[EVP_MAX_MD_SIZE], *dhex = NULL;
-	int dlen, rv = -1;
+	struct tls_x509 *x509 = TLS_CONTAINER_OF(vtable, struct tls_x509, vtable);
 
-	free(*hash);
-	*hash = NULL;
-
-	if (X509_pubkey_digest(cert, EVP_sha256(), d, &dlen) != 1)
-		goto err;
-
-	if (tls_hex_string(d, dlen, &dhex, NULL) != 0)
-		goto err;
-
-	if (asprintf(hash, "SHA256:%s", dhex) == -1) {
-		*hash = NULL;
-		goto err;
-	}
-
-	rv = 0;
-
- err:
-	free(dhex);
-
-	return (rv);
+	if (!x509->ctx->config->verify_name)
+		server_name = NULL;
+	x509->depth = 0;
+	x509->minimal.vtable->start_chain(&x509->minimal.vtable, server_name);
 }
 
-int
-tls_configure_ssl_keypair(struct tls *ctx, SSL_CTX *ssl_ctx,
-    struct tls_keypair *keypair, int required)
+static void
+x509_start_cert(const br_x509_class **vtable, uint32_t length)
 {
-	EVP_PKEY *pkey = NULL;
-	BIO *bio = NULL;
+	struct tls_x509 *x509 = TLS_CONTAINER_OF(vtable, struct tls_x509, vtable);
+	struct tls *ctx = x509->ctx;
+	br_x509_certificate *chain, *cert;
 
-	if (!required &&
-	    keypair->cert_mem == NULL &&
-	    keypair->key_mem == NULL)
-		return(0);
+	++x509->depth;
+	x509->minimal.vtable->start_cert(&x509->minimal.vtable, length);
 
-	if (keypair->cert_mem != NULL) {
-		if (keypair->cert_len > INT_MAX) {
-			tls_set_errorx(ctx, "certificate too long");
-			goto err;
+	if (ctx->error.tls == 0) {
+		if ((chain = reallocarray(ctx->peer_chain, ctx->peer_chain_len + 1,
+		    sizeof(chain[0]))) == NULL) {
+			tls_set_error(ctx, "X.509 certificate chain");
+			return;
 		}
+		++ctx->peer_chain_len;
+		ctx->peer_chain = chain;
 
-		if (SSL_CTX_use_certificate_chain_mem(ssl_ctx,
-		    keypair->cert_mem, keypair->cert_len) != 1) {
-			tls_set_errorx(ctx, "failed to load certificate");
-			goto err;
+		cert = &chain[ctx->peer_chain_len - 1];
+		cert->data_len = 0;
+		if ((cert->data = calloc(1, length)) == NULL) {
+			tls_set_error(ctx, "X.509 certificate chain");
+			return;
 		}
 	}
-
-	if (keypair->key_mem != NULL) {
-		if (keypair->key_len > INT_MAX) {
-			tls_set_errorx(ctx, "key too long");
-			goto err;
-		}
-
-		if ((bio = BIO_new_mem_buf(keypair->key_mem,
-		    keypair->key_len)) == NULL) {
-			tls_set_errorx(ctx, "failed to create buffer");
-			goto err;
-		}
-		if ((pkey = PEM_read_bio_PrivateKey(bio, NULL, tls_password_cb,
-		    NULL)) == NULL) {
-			tls_set_errorx(ctx, "failed to read private key");
-			goto err;
-		}
-
-		if (keypair->pubkey_hash != NULL) {
-			RSA *rsa;
-			/* XXX only RSA for now for relayd privsep */
-			if ((rsa = EVP_PKEY_get1_RSA(pkey)) != NULL) {
-				RSA_set_ex_data(rsa, 0, keypair->pubkey_hash);
-				RSA_free(rsa);
-			}
-		}
-
-		if (SSL_CTX_use_PrivateKey(ssl_ctx, pkey) != 1) {
-			tls_set_errorx(ctx, "failed to load private key");
-			goto err;
-		}
-		BIO_free(bio);
-		bio = NULL;
-		EVP_PKEY_free(pkey);
-		pkey = NULL;
-	}
-
-	if (!ctx->config->skip_private_key_check &&
-	    SSL_CTX_check_private_key(ssl_ctx) != 1) {
-		tls_set_errorx(ctx, "private/public key mismatch");
-		goto err;
-	}
-
-	return (0);
-
- err:
-	EVP_PKEY_free(pkey);
-	BIO_free(bio);
-
-	return (1);
 }
 
-int
-tls_configure_ssl(struct tls *ctx, SSL_CTX *ssl_ctx)
+static void
+x509_append(const br_x509_class **vtable, const unsigned char *buf, size_t len)
 {
-	SSL_CTX_set_mode(ssl_ctx, SSL_MODE_ENABLE_PARTIAL_WRITE);
-	SSL_CTX_set_mode(ssl_ctx, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
+	struct tls_x509 *x509 = TLS_CONTAINER_OF(vtable, struct tls_x509, vtable);
+	struct tls *ctx = x509->ctx;
+	br_x509_certificate *cert = &ctx->peer_chain[ctx->peer_chain_len - 1];
 
-	SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_SSLv2);
-	SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_SSLv3);
+	if (ctx->error.tls == 0) {
+		memcpy(cert->data + cert->data_len, buf, len);
+		cert->data_len += len;
+	}
+	x509->minimal.vtable->append(&x509->minimal.vtable, buf, len);
+}
 
-	SSL_CTX_clear_options(ssl_ctx, SSL_OP_NO_TLSv1);
-	SSL_CTX_clear_options(ssl_ctx, SSL_OP_NO_TLSv1_1);
-	SSL_CTX_clear_options(ssl_ctx, SSL_OP_NO_TLSv1_2);
+static void
+x509_end_cert(const br_x509_class **vtable)
+{
+	struct tls_x509 *x509 = TLS_CONTAINER_OF(vtable, struct tls_x509, vtable);
 
-	if ((ctx->config->protocols & TLS_PROTOCOL_TLSv1_0) == 0)
-		SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1);
-	if ((ctx->config->protocols & TLS_PROTOCOL_TLSv1_1) == 0)
-		SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1_1);
-	if ((ctx->config->protocols & TLS_PROTOCOL_TLSv1_2) == 0)
-		SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1_2);
+	x509->minimal.vtable->end_cert(&x509->minimal.vtable);
+}
+
+static unsigned
+x509_end_chain(const br_x509_class **vtable)
+{
+	struct tls_x509 *x509 = TLS_CONTAINER_OF(vtable, struct tls_x509, vtable);
+	struct tls *ctx = x509->ctx;
+	unsigned err;
+
+	err = x509->minimal.vtable->end_chain(&x509->minimal.vtable);
+	switch (err) {
+	case BR_ERR_X509_EXPIRED:
+		if (ctx->config->verify_time == 0)
+			err = BR_ERR_OK;
+		break;
+	case BR_ERR_X509_BAD_SERVER_NAME:
+		if (ctx->config->verify_name == 0)
+			err = BR_ERR_OK;
+		break;
+	case BR_ERR_X509_NOT_TRUSTED:
+		if (ctx->config->verify_cert == 0)
+			err = BR_ERR_OK;
+		break;
+	}
+
+	if (x509->depth > ctx->config->verify_depth + 2) {
+		err = BR_ERR_X509_LIMIT_EXCEEDED;
+		goto out;
+	}
+
+	if (x509->ctx->error.tls) {
+		/* out of memory when allocating certificate chain */
+		err = -1;
+		goto out;
+	}
+
+ out:
+	return err;
+}
+
+static const br_x509_pkey *
+x509_get_pkey(const br_x509_class *const *vtable, unsigned *usages)
+{
+	struct tls_x509 *x509 = TLS_CONTAINER_OF(vtable, struct tls_x509, vtable);
+
+	return x509->minimal.vtable->get_pkey(&x509->minimal.vtable, usages);
+}
+
+static const br_x509_class x509_vtable = {
+	.start_chain = x509_start_chain,
+	.start_cert = x509_start_cert,
+	.append = x509_append,
+	.end_cert = x509_end_cert,
+	.end_chain = x509_end_chain,
+	.get_pkey = x509_get_pkey,
+};
+
+struct tls_conn *
+tls_conn_new(struct tls *ctx)
+{
+	struct tls_conn *conn;
+	br_ssl_engine_context *eng;
+	unsigned version_min, version_max;
+
+	if ((conn = calloc(1, sizeof(*conn))) == NULL)
+		return NULL;
+
+	eng = &conn->u.engine;
+
+	switch (ctx->config->protocols) {
+	case TLS_PROTOCOL_TLSv1_0:
+		version_min = BR_TLS10;
+		version_max = BR_TLS10;
+		break;
+	case TLS_PROTOCOL_TLSv1_0|TLS_PROTOCOL_TLSv1_1:
+		version_min = BR_TLS10;
+		version_max = BR_TLS11;
+		break;
+	case TLS_PROTOCOL_TLSv1_0|TLS_PROTOCOL_TLSv1_1|TLS_PROTOCOL_TLSv1_2:
+		version_min = BR_TLS10;
+		version_max = BR_TLS12;
+		break;
+	case TLS_PROTOCOL_TLSv1_1:
+		version_min = BR_TLS11;
+		version_max = BR_TLS11;
+		break;
+	case TLS_PROTOCOL_TLSv1_1|TLS_PROTOCOL_TLSv1_2:
+		version_min = BR_TLS11;
+		version_max = BR_TLS12;
+		break;
+	case TLS_PROTOCOL_TLSv1_2:
+		version_min = BR_TLS12;
+		version_max = BR_TLS12;
+		break;
+	default:
+		tls_set_errorx(ctx, "unsupported set of protocol versions");
+		goto err;
+	}
+	br_ssl_engine_set_versions(eng, version_min, version_max);
+	br_ssl_engine_set_buffer(eng, conn->buf, BR_SSL_BUFSIZE_BIDI, 1);
 
 	if (ctx->config->alpn != NULL) {
-		if (SSL_CTX_set_alpn_protos(ssl_ctx, ctx->config->alpn,
-		    ctx->config->alpn_len) != 0) {
-			tls_set_errorx(ctx, "failed to set alpn");
-			goto err;
-		}
+		br_ssl_engine_set_protocol_names(eng, ctx->config->alpn,
+		    ctx->config->alpn_len);
 	}
 
-	if (ctx->config->ciphers != NULL) {
-		if (SSL_CTX_set_cipher_list(ssl_ctx,
-		    ctx->config->ciphers) != 1) {
-			tls_set_errorx(ctx, "failed to set ciphers");
-			goto err;
-		}
+	if (ctx->config->suites != NULL) {
+		br_ssl_engine_set_suites(eng, ctx->config->suites,
+		    ctx->config->suites_len);
 	}
 
-	if (ctx->config->verify_time == 0) {
-		X509_VERIFY_PARAM_set_flags(ssl_ctx->param,
-		    X509_V_FLAG_NO_CHECK_TIME);
-	}
+	br_ssl_engine_set_default_rsavrfy(eng);
+	br_ssl_engine_set_default_ecdsa(eng);
+	/* default EC implementation, possibly with some curves removed */
+	br_ssl_engine_set_ec(eng, &ctx->config->ec);
 
-	/* Disable any form of session caching by default */
-	SSL_CTX_set_session_cache_mode(ssl_ctx, SSL_SESS_CACHE_OFF);
-	SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TICKET);
+	br_ssl_engine_set_hash(eng, br_md5_ID, &br_md5_vtable);
+	br_ssl_engine_set_hash(eng, br_sha1_ID, &br_sha1_vtable);
+	br_ssl_engine_set_hash(eng, br_sha224_ID, &br_sha224_vtable);
+	br_ssl_engine_set_hash(eng, br_sha256_ID, &br_sha256_vtable);
+	br_ssl_engine_set_hash(eng, br_sha384_ID, &br_sha384_vtable);
+	br_ssl_engine_set_hash(eng, br_sha512_ID, &br_sha512_vtable);
 
-	return (0);
+	br_ssl_engine_set_prf10(eng, &br_tls10_prf);
+	br_ssl_engine_set_prf_sha256(eng, &br_tls12_sha256_prf);
+	br_ssl_engine_set_prf_sha384(eng, &br_tls12_sha384_prf);
+
+	br_ssl_engine_set_default_aes_cbc(eng);
+	br_ssl_engine_set_default_aes_ccm(eng);
+	br_ssl_engine_set_default_aes_gcm(eng);
+	br_ssl_engine_set_default_des_cbc(eng);
+	br_ssl_engine_set_default_chapol(eng);
+
+	return (conn);
 
  err:
-	return (-1);
-}
-
-static int
-tls_ssl_cert_verify_cb(X509_STORE_CTX *x509_ctx, void *arg)
-{
-	struct tls *ctx = arg;
-	int x509_err;
-
-	if (ctx->config->verify_cert == 0)
-		return (1);
-
-	if ((X509_verify_cert(x509_ctx)) < 0) {
-		tls_set_errorx(ctx, "X509 verify cert failed");
-		return (0);
-	}
-
-	x509_err = X509_STORE_CTX_get_error(x509_ctx);
-	if (x509_err == X509_V_OK)
-		return (1);
-
-	tls_set_errorx(ctx, "certificate verification failed: %s",
-	    X509_verify_cert_error_string(x509_err));
-
-	return (0);
+	return (NULL);
 }
 
 int
-tls_configure_ssl_verify(struct tls *ctx, SSL_CTX *ssl_ctx, int verify)
+tls_configure_x509(struct tls *ctx)
 {
-	size_t ca_len = ctx->config->ca_len;
-	char *ca_mem = ctx->config->ca_mem;
-	char *crl_mem = ctx->config->crl_mem;
-	size_t crl_len = ctx->config->crl_len;
-	char *ca_free = NULL;
-	STACK_OF(X509_INFO) *xis = NULL;
-	X509_STORE *store;
-	X509_INFO *xi;
-	BIO *bio = NULL;
 	int rv = -1;
-	int i;
-
-	SSL_CTX_set_verify(ssl_ctx, verify, NULL);
-	SSL_CTX_set_cert_verify_callback(ssl_ctx, tls_ssl_cert_verify_cb, ctx);
-
-	if (ctx->config->verify_depth >= 0)
-		SSL_CTX_set_verify_depth(ssl_ctx, ctx->config->verify_depth);
-
-	if (ctx->config->verify_cert == 0)
-		goto done;
+	struct tls_x509 *x509;
 
 	/* If no CA has been specified, attempt to load the default. */
-	if (ctx->config->ca_mem == NULL && ctx->config->ca_path == NULL) {
-		if (tls_config_load_file(&ctx->error, "CA", tls_default_ca_cert_file(),
-		    &ca_mem, &ca_len) != 0)
-			goto err;
-		ca_free = ca_mem;
-	}
-
-	if (ca_mem != NULL) {
-		if (ca_len > INT_MAX) {
-			tls_set_errorx(ctx, "ca too long");
-			goto err;
-		}
-		if (SSL_CTX_load_verify_mem(ssl_ctx, ca_mem, ca_len) != 1) {
-			tls_set_errorx(ctx, "ssl verify memory setup failure");
-			goto err;
-		}
-	} else if (SSL_CTX_load_verify_locations(ssl_ctx, NULL,
-	    ctx->config->ca_path) != 1) {
-		tls_set_errorx(ctx, "ssl verify locations failure");
+	if (ctx->config->verify_cert != 0 &&
+	    ctx->config->ca == NULL &&
+	    tls_config_set_cert_file(ctx->config, tls_default_ca_cert_file()) != 0) {
+		tls_set_errorx(ctx, "CA load failed");
 		goto err;
 	}
 
-	if (crl_mem != NULL) {
-		if (crl_len > INT_MAX) {
-			tls_set_errorx(ctx, "crl too long");
-			goto err;
-		}
-		if ((bio = BIO_new_mem_buf(crl_mem, crl_len)) == NULL) {
-			tls_set_errorx(ctx, "failed to create buffer");
-			goto err;
-		}
-		if ((xis = PEM_X509_INFO_read_bio(bio, NULL, tls_password_cb,
-		    NULL)) == NULL) {
-			tls_set_errorx(ctx, "failed to parse crl");
-			goto err;
-		}
-		store = SSL_CTX_get_cert_store(ssl_ctx);
-		for (i = 0; i < sk_X509_INFO_num(xis); i++) {
-			xi = sk_X509_INFO_value(xis, i);
-			if (xi->crl == NULL)
-				continue;
-			if (!X509_STORE_add_crl(store, xi->crl)) {
-				tls_set_error(ctx, "failed to add crl");
-				goto err;
-			}
-			xi->crl = NULL;
-		}
-		X509_VERIFY_PARAM_set_flags(store->param,
-		    X509_V_FLAG_CRL_CHECK | X509_V_FLAG_CRL_CHECK_ALL);
+	if ((x509 = calloc(1, sizeof(*x509))) == NULL) {
+		tls_set_error(ctx, "X.509 context");
+		goto err;
 	}
 
- done:
+	x509->ctx = ctx;
+	x509->vtable = &x509_vtable;
+	br_x509_minimal_init_full(&x509->minimal, ctx->config->ca,
+	    ctx->config->ca_len);
+	br_ssl_engine_set_x509(&ctx->conn->u.engine, &x509->vtable);
+
+	ctx->conn->x509 = x509;
+
 	rv = 0;
 
  err:
-	sk_X509_INFO_pop_free(xis, X509_INFO_free);
-	BIO_free(bio);
-	free(ca_free);
-
 	return (rv);
 }
 
@@ -578,20 +522,23 @@ tls_free(struct tls *ctx)
 void
 tls_reset(struct tls *ctx)
 {
-	struct tls_sni_ctx *sni, *nsni;
+	size_t i;
 
 	tls_config_free(ctx->config);
 	ctx->config = NULL;
 
-	SSL_CTX_free(ctx->ssl_ctx);
-	SSL_free(ctx->ssl_conn);
-	X509_free(ctx->ssl_peer_cert);
+	if (ctx->conn) {
+		free(ctx->conn->x509);
+		freezero(ctx->conn, sizeof(*ctx->conn));
+	}
+	ctx->conn = NULL;
 
-	ctx->ssl_conn = NULL;
-	ctx->ssl_ctx = NULL;
-	ctx->ssl_peer_cert = NULL;
-	/* X509 objects in chain are freed with the SSL */
-	ctx->ssl_peer_chain = NULL;
+	for (i = 0; i < ctx->peer_chain_len; ++i)
+		free(ctx->peer_chain[i].data);
+	ctx->peer_chain = NULL;
+	ctx->peer_chain_len = 0;
+
+	ctx->peer_chain = NULL;
 
 	ctx->socket = -1;
 	ctx->state = 0;
@@ -606,68 +553,88 @@ tls_reset(struct tls *ctx)
 	tls_conninfo_free(ctx->conninfo);
 	ctx->conninfo = NULL;
 
-	tls_ocsp_free(ctx->ocsp);
-	ctx->ocsp = NULL;
-
-	for (sni = ctx->sni_ctx; sni != NULL; sni = nsni) {
-		nsni = sni->next;
-		tls_sni_ctx_free(sni);
-	}
-	ctx->sni_ctx = NULL;
-
 	ctx->read_cb = NULL;
 	ctx->write_cb = NULL;
 	ctx->cb_arg = NULL;
 }
 
 int
-tls_ssl_error(struct tls *ctx, SSL *ssl_conn, int ssl_ret, const char *prefix)
+tls_ssl_error(struct tls *ctx, br_ssl_engine_context *eng, ssize_t ret, const char *prefix)
 {
 	const char *errstr = "unknown error";
-	unsigned long err;
-	int ssl_err;
+	int err;
 
-	ssl_err = SSL_get_error(ssl_conn, ssl_ret);
-	switch (ssl_err) {
-	case SSL_ERROR_NONE:
-	case SSL_ERROR_ZERO_RETURN:
-		return (0);
-
-	case SSL_ERROR_WANT_READ:
-		return (TLS_WANT_POLLIN);
-
-	case SSL_ERROR_WANT_WRITE:
-		return (TLS_WANT_POLLOUT);
-
-	case SSL_ERROR_SYSCALL:
-		if ((err = ERR_peek_error()) != 0) {
-			errstr = ERR_error_string(err, NULL);
-		} else if (ssl_ret == 0) {
-			if ((ctx->state & TLS_HANDSHAKE_COMPLETE) != 0) {
-				ctx->state |= TLS_EOF_NO_CLOSE_NOTIFY;
-				return (0);
-			}
-			errstr = "unexpected EOF";
-		} else if (ssl_ret == -1) {
-			errstr = strerror(errno);
+	if (ret == TLS_WANT_POLLIN || ret == TLS_WANT_POLLOUT)
+		return ret;
+	if ((err = br_ssl_engine_last_error(eng)) != 0) {
+		errstr = bearssl_strerror(err);
+	} else if (ret == 0) {
+		if ((ctx->state & TLS_HANDSHAKE_COMPLETE) != 0) {
+			ctx->state |= TLS_EOF_NO_CLOSE_NOTIFY;
+			return (0);
 		}
-		tls_set_ssl_errorx(ctx, "%s failed: %s", prefix, errstr);
-		return (-1);
-
-	case SSL_ERROR_SSL:
-		if ((err = ERR_peek_error()) != 0) {
-			errstr = ERR_error_string(err, NULL);
-		}
-		tls_set_ssl_errorx(ctx, "%s failed: %s", prefix, errstr);
-		return (-1);
-
-	case SSL_ERROR_WANT_CONNECT:
-	case SSL_ERROR_WANT_ACCEPT:
-	case SSL_ERROR_WANT_X509_LOOKUP:
-	default:
-		tls_set_ssl_errorx(ctx, "%s failed (%i)", prefix, ssl_err);
-		return (-1);
+		errstr = "unexpected EOF";
+	} else if (ret == -1) {
+		errstr = strerror(errno);
 	}
+	tls_set_ssl_errorx(ctx, "%s failed: %s", prefix, errstr);
+	return (-1);
+}
+
+static int
+tls_run_until(struct tls *ctx, unsigned target, const char *prefix)
+{
+	br_ssl_engine_context *eng = &ctx->conn->u.engine;
+	unsigned state;
+	unsigned char *buf;
+	size_t len;
+	ssize_t ret;
+	int rv = -1, err;
+
+	for (;;) {
+		state = br_ssl_engine_current_state(eng);
+		if (state & BR_SSL_CLOSED) {
+			if ((err = br_ssl_engine_last_error(eng)) != 0) {
+				tls_set_errorx(ctx, "%s (%d)", bearssl_strerror(err), err);
+				goto err;
+			}
+			break;
+		}
+		if (state & BR_SSL_SENDREC) {
+			buf = br_ssl_engine_sendrec_buf(eng, &len);
+			ret = (ctx->write_cb)(ctx, buf, len, ctx->cb_arg);
+			if (ret <= 0) {
+				rv = tls_ssl_error(ctx, eng, ret, prefix);
+				goto err;
+			}
+			br_ssl_engine_sendrec_ack(eng, ret);
+			continue;
+		}
+		if (state & target)
+			break;
+		if (state & BR_SSL_RECVAPP) {
+			/* we use a bidirectional buffer, so this
+			 * should never happen */
+			tls_set_error(ctx, "unexpected I/O state");
+			goto err;
+		}
+		if (state & BR_SSL_RECVREC) {
+			buf = br_ssl_engine_recvrec_buf(eng, &len);
+			ret = (ctx->read_cb)(ctx, buf, len, ctx->cb_arg);
+			if (ret <= 0) {
+				rv = tls_ssl_error(ctx, eng, ret, prefix);
+				goto err;
+			}
+			br_ssl_engine_recvrec_ack(eng, ret);
+			continue;
+		}
+		br_ssl_engine_flush(eng, 0);
+	}
+
+	rv = 0;
+
+ err:
+	return rv;
 }
 
 int
@@ -677,7 +644,12 @@ tls_handshake(struct tls *ctx)
 
 	tls_error_clear(&ctx->error);
 
-	if ((ctx->flags & (TLS_CLIENT | TLS_SERVER_CONN)) == 0) {
+	if ((ctx->flags & TLS_CLIENT) != 0) {
+		if ((ctx->state & TLS_CONNECTED) == 0) {
+			tls_set_errorx(ctx, "context not connected");
+			goto out;
+		}
+	} else if ((ctx->flags & TLS_SERVER_CONN) == 0) {
 		tls_set_errorx(ctx, "invalid operation for context");
 		goto out;
 	}
@@ -687,19 +659,16 @@ tls_handshake(struct tls *ctx)
 		goto out;
 	}
 
-	if ((ctx->flags & TLS_CLIENT) != 0)
-		rv = tls_handshake_client(ctx);
-	else if ((ctx->flags & TLS_SERVER_CONN) != 0)
-		rv = tls_handshake_server(ctx);
+	ctx->state |= TLS_SSL_NEEDS_SHUTDOWN;
 
-	if (rv == 0) {
-		ctx->ssl_peer_cert = SSL_get_peer_certificate(ctx->ssl_conn);
-		ctx->ssl_peer_chain = SSL_get_peer_cert_chain(ctx->ssl_conn);
-		if (tls_conninfo_populate(ctx) == -1)
-			rv = -1;
-		if (ctx->ocsp == NULL)
-			ctx->ocsp = tls_ocsp_setup_from_peer(ctx);
-	}
+	if ((rv = tls_run_until(ctx, BR_SSL_SENDAPP | BR_SSL_RECVAPP, "handshake")) != 0)
+		goto out;
+
+	ctx->state |= TLS_HANDSHAKE_COMPLETE;
+
+	if (tls_conninfo_populate(ctx) == -1)
+		rv = -1;
+
  out:
 	/* Prevent callers from performing incorrect error handling */
 	errno = 0;
@@ -709,8 +678,10 @@ tls_handshake(struct tls *ctx)
 ssize_t
 tls_read(struct tls *ctx, void *buf, size_t buflen)
 {
+	br_ssl_engine_context *eng = &ctx->conn->u.engine;
 	ssize_t rv = -1;
-	int ssl_ret;
+	unsigned char *app;
+	size_t applen;
 
 	tls_error_clear(&ctx->error);
 
@@ -719,17 +690,16 @@ tls_read(struct tls *ctx, void *buf, size_t buflen)
 			goto out;
 	}
 
-	if (buflen > INT_MAX) {
-		tls_set_errorx(ctx, "buflen too long");
+	if ((rv = tls_run_until(ctx, BR_SSL_RECVAPP, "read")) != 0)
 		goto out;
-	}
 
-	ERR_clear_error();
-	if ((ssl_ret = SSL_read(ctx->ssl_conn, buf, buflen)) > 0) {
-		rv = (ssize_t)ssl_ret;
-		goto out;
-	}
-	rv = (ssize_t)tls_ssl_error(ctx, ctx->ssl_conn, ssl_ret, "read");
+	app = br_ssl_engine_recvapp_buf(eng, &applen);
+	if (applen > buflen)
+		applen = buflen;
+	memcpy(buf, app, applen);
+	br_ssl_engine_recvapp_ack(eng, applen);
+
+	rv = applen;
 
  out:
 	/* Prevent callers from performing incorrect error handling */
@@ -740,8 +710,10 @@ tls_read(struct tls *ctx, void *buf, size_t buflen)
 ssize_t
 tls_write(struct tls *ctx, const void *buf, size_t buflen)
 {
+	br_ssl_engine_context *eng = &ctx->conn->u.engine;
 	ssize_t rv = -1;
-	int ssl_ret;
+	unsigned char *app;
+	size_t applen;
 
 	tls_error_clear(&ctx->error);
 
@@ -750,17 +722,24 @@ tls_write(struct tls *ctx, const void *buf, size_t buflen)
 			goto out;
 	}
 
-	if (buflen > INT_MAX) {
-		tls_set_errorx(ctx, "buflen too long");
+	if ((rv = tls_run_until(ctx, BR_SSL_SENDAPP, "write")) != 0)
+		goto out;
+
+	app = br_ssl_engine_sendapp_buf(eng, &applen);
+	if (applen > buflen)
+		applen = buflen;
+	memcpy(app, buf, applen);
+	br_ssl_engine_sendapp_ack(eng, applen);
+	br_ssl_engine_flush(eng, 0);
+
+	/* XXX: what should we return if we buffer a record, but
+	 * are unable to send it without blocking? */
+	if ((rv = tls_run_until(ctx, BR_SSL_SENDAPP, "write")) != 0 &&
+	    rv != TLS_WANT_POLLOUT) {
 		goto out;
 	}
 
-	ERR_clear_error();
-	if ((ssl_ret = SSL_write(ctx->ssl_conn, buf, buflen)) > 0) {
-		rv = (ssize_t)ssl_ret;
-		goto out;
-	}
-	rv = (ssize_t)tls_ssl_error(ctx, ctx->ssl_conn, ssl_ret, "write");
+	rv = (ssize_t)applen;
 
  out:
 	/* Prevent callers from performing incorrect error handling */
@@ -771,7 +750,8 @@ tls_write(struct tls *ctx, const void *buf, size_t buflen)
 int
 tls_close(struct tls *ctx)
 {
-	int ssl_ret;
+	br_ssl_engine_context *eng = &ctx->conn->u.engine;
+	size_t len;
 	int rv = 0;
 
 	tls_error_clear(&ctx->error);
@@ -783,13 +763,16 @@ tls_close(struct tls *ctx)
 	}
 
 	if (ctx->state & TLS_SSL_NEEDS_SHUTDOWN) {
-		ERR_clear_error();
-		ssl_ret = SSL_shutdown(ctx->ssl_conn);
-		if (ssl_ret < 0) {
-			rv = tls_ssl_error(ctx, ctx->ssl_conn, ssl_ret,
-			    "shutdown");
-			if (rv == TLS_WANT_POLLIN || rv == TLS_WANT_POLLOUT)
+		if (!(ctx->state & TLS_SSL_IN_SHUTDOWN)) {
+			br_ssl_engine_close(eng);
+			ctx->state |= TLS_SSL_IN_SHUTDOWN;
+		}
+		while (br_ssl_engine_current_state(eng) != BR_SSL_CLOSED) {
+			if ((rv = tls_run_until(ctx, BR_SSL_RECVAPP, "shutdown")) != 0)
 				goto out;
+			/* discard incoming application data */
+			br_ssl_engine_recvapp_buf(eng, &len);
+			br_ssl_engine_recvapp_ack(eng, len);
 		}
 		ctx->state &= ~TLS_SSL_NEEDS_SHUTDOWN;
 	}

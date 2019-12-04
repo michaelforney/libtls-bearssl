@@ -1,0 +1,7 @@
+image: alpine/latest
+packages:
+- bearssl-dev
+sources:
+- https://git.sr.ht/~mcf/libtls-bearssl
+tasks:
+- build: make -C libtls-bearssl

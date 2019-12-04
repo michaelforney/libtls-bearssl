@@ -15,6 +15,10 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#ifdef _MSC_VER
+#define NO_REDEF_POSIX_FUNCTIONS
+#endif
+
 #include <sys/stat.h>
 
 #include <ctype.h>
@@ -22,6 +26,7 @@
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdlib.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <tls.h>
@@ -89,7 +94,6 @@ struct tls_config *
 tls_config_new_internal(void)
 {
 	struct tls_config *config;
-	unsigned char sid[TLS_MAX_SESSION_ID_LENGTH];
 
 	if ((config = calloc(1, sizeof(*config))) == NULL)
 		return (NULL);
@@ -98,7 +102,6 @@ tls_config_new_internal(void)
 		goto err;
 
 	config->refcount = 1;
-	config->session_fd = -1;
 
 	if ((config->keypair = tls_keypair_new()) == NULL)
 		goto err;
@@ -108,6 +111,7 @@ tls_config_new_internal(void)
 	 */
 	if (tls_config_set_dheparams(config, "none") != 0)
 		goto err;
+	config->ec = *br_ec_get_default();
 	if (tls_config_set_ecdhecurves(config, "default") != 0)
 		goto err;
 	if (tls_config_set_ciphers(config, "secure") != 0)
@@ -117,17 +121,6 @@ tls_config_new_internal(void)
 		goto err;
 	if (tls_config_set_verify_depth(config, 6) != 0)
 		goto err;
-
-	/*
-	 * Set session ID context to a random value.  For the simple case
-	 * of a single process server this is good enough. For multiprocess
-	 * servers the session ID needs to be set by the caller.
-	 */
-	arc4random_buf(sid, sizeof(sid));
-	if (tls_config_set_session_id(config, sid, sizeof(sid)) != 0)
-		goto err;
-	config->ticket_keyrev = arc4random();
-	config->ticket_autorekey = 1;
 
 	tls_config_prefer_ciphers_server(config);
 
@@ -154,6 +147,7 @@ tls_config_free(struct tls_config *config)
 {
 	struct tls_keypair *kp, *nkp;
 	int refcount;
+	size_t i;
 
 	if (config == NULL)
 		return;
@@ -172,12 +166,13 @@ tls_config_free(struct tls_config *config)
 
 	free(config->error.msg);
 
+	if (config->alpn_len > 0)
+		free((char *)config->alpn[0]);
 	free(config->alpn);
-	free((char *)config->ca_mem);
-	free((char *)config->ca_path);
-	free((char *)config->ciphers);
-	free((char *)config->crl_mem);
-	free(config->ecdhecurves);
+	for (i = 0; i < config->ca_len; ++i)
+		free(config->ca[i].dn.data);
+	free(config->ca);
+	free((uint16_t *)config->suites);
 
 	free(config);
 }
@@ -274,10 +269,10 @@ tls_config_parse_protocols(uint32_t *protocols, const char *protostr)
 
 static int
 tls_config_parse_alpn(struct tls_config *config, const char *alpn,
-    char **alpn_data, size_t *alpn_len)
+    const char ***alpn_data, size_t *alpn_len)
 {
-	size_t buf_len, i, len;
-	char *buf = NULL;
+	size_t names_len, i, len;
+	const char **names = NULL;
 	char *s = NULL;
 	char *p, *q;
 
@@ -285,17 +280,17 @@ tls_config_parse_alpn(struct tls_config *config, const char *alpn,
 	*alpn_data = NULL;
 	*alpn_len = 0;
 
-	if ((buf_len = strlen(alpn) + 1) > 65535) {
-		tls_config_set_errorx(config, "alpn too large");
-		goto err;
-	}
-
-	if ((buf = malloc(buf_len)) == NULL) {
+	if ((s = strdup(alpn)) == NULL) {
 		tls_config_set_errorx(config, "out of memory");
 		goto err;
 	}
 
-	if ((s = strdup(alpn)) == NULL) {
+	names_len = 0;
+	for (p = s; *p; ++p) {
+		if (*p == ',')
+			++names_len;
+	}
+	if ((names = reallocarray(NULL, names_len, sizeof(names[0]))) == NULL) {
 		tls_config_set_errorx(config, "out of memory");
 		goto err;
 	}
@@ -313,20 +308,18 @@ tls_config_parse_alpn(struct tls_config *config, const char *alpn,
 			    "alpn protocol too long");
 			goto err;
 		}
-		buf[i++] = len & 0xff;
-		memcpy(&buf[i], p, len);
-		i += len;
+		names[i++] = p;
 	}
 
 	free(s);
 
-	*alpn_data = buf;
-	*alpn_len = buf_len;
+	*alpn_data = names;
+	*alpn_len = names_len;
 
 	return (0);
 
  err:
-	free(buf);
+	free(names);
 	free(s);
 
 	return (-1);
@@ -382,6 +375,8 @@ tls_config_add_keypair_mem_internal(struct tls_config *config, const uint8_t *ce
 	    tls_keypair_set_ocsp_staple_mem(keypair, &config->error, staple,
 		staple_len) != 0)
 		goto err;
+	if (tls_keypair_check(keypair, &config->error) != 0)
+		goto err;
 
 	tls_config_keypair_add(config, keypair);
 
@@ -428,20 +423,31 @@ tls_config_add_keypair_ocsp_file(struct tls_config *config,
 int
 tls_config_set_ca_file(struct tls_config *config, const char *ca_file)
 {
-	return tls_config_load_file(&config->error, "CA", ca_file,
-	    &config->ca_mem, &config->ca_len);
+	char *ca_mem = NULL;
+	size_t ca_len;
+	int rv;
+
+	if ((rv = tls_config_load_file(&config->error, "CA", ca_file,
+	    &ca_mem, &ca_len)) != 0)
+		return -1;
+
+	rv = tls_config_set_ca_mem(config, (uint8_t *)ca_mem, ca_len);
+	free(ca_mem);
+
+	return rv;
 }
 
 int
 tls_config_set_ca_path(struct tls_config *config, const char *ca_path)
 {
-	return tls_set_string(&config->ca_path, ca_path);
+	return -1;
 }
 
 int
 tls_config_set_ca_mem(struct tls_config *config, const uint8_t *ca, size_t len)
 {
-	return tls_set_mem(&config->ca_mem, &config->ca_len, ca, len);
+	return bearssl_load_ca(&config->error, ca, len, &config->ca,
+	    &config->ca_len);
 }
 
 int
@@ -462,8 +468,6 @@ tls_config_set_cert_mem(struct tls_config *config, const uint8_t *cert,
 int
 tls_config_set_ciphers(struct tls_config *config, const char *ciphers)
 {
-	SSL_CTX *ssl_ctx = NULL;
-
 	if (ciphers == NULL ||
 	    strcasecmp(ciphers, "default") == 0 ||
 	    strcasecmp(ciphers, "secure") == 0)
@@ -476,35 +480,23 @@ tls_config_set_ciphers(struct tls_config *config, const char *ciphers)
 	    strcasecmp(ciphers, "insecure") == 0)
 		ciphers = TLS_CIPHERS_ALL;
 
-	if ((ssl_ctx = SSL_CTX_new(SSLv23_method())) == NULL) {
-		tls_config_set_errorx(config, "out of memory");
-		goto err;
-	}
-	if (SSL_CTX_set_cipher_list(ssl_ctx, ciphers) != 1) {
-		tls_config_set_errorx(config, "no ciphers for '%s'", ciphers);
-		goto err;
-	}
-
-	SSL_CTX_free(ssl_ctx);
-	return tls_set_string(&config->ciphers, ciphers);
-
- err:
-	SSL_CTX_free(ssl_ctx);
-	return -1;
+	return bearssl_parse_ciphers(ciphers, (uint16_t **)&config->suites,
+	    &config->suites_len);
 }
 
 int
 tls_config_set_crl_file(struct tls_config *config, const char *crl_file)
 {
-	return tls_config_load_file(&config->error, "CRL", crl_file,
-	    &config->crl_mem, &config->crl_len);
+	/* XXX: not supported by BearSSL */
+	return -1;
 }
 
 int
 tls_config_set_crl_mem(struct tls_config *config, const uint8_t *crl,
     size_t len)
 {
-	return tls_set_mem(&config->crl_mem, &config->crl_len, crl, len);
+	/* XXX: not supported by BearSSL */
+	return -1;
 }
 
 int
@@ -545,62 +537,64 @@ tls_config_set_ecdhecurve(struct tls_config *config, const char *curve)
 }
 
 int
-tls_config_set_ecdhecurves(struct tls_config *config, const char *curves)
+tls_config_set_ecdhecurves(struct tls_config *config, const char *curve_names)
 {
-	int *curves_list = NULL, *curves_new;
-	size_t curves_num = 0;
+	/* BearSSL presents supported curves in a fixed order, so
+	 * ECDHE curves set in the config must be a subsequence of the
+	 * following sequence. */
+	static const struct {
+		char name[8];
+		int id;
+	} curves[] = {
+		{"X25519", BR_EC_curve25519},
+		{"P-256", BR_EC_secp256r1},
+		{"P-384", BR_EC_secp384r1},
+		{"P-521", BR_EC_secp521r1},
+	};
+	uint32_t supported_curves = 0;
 	char *cs = NULL;
 	char *p, *q;
+	size_t i, j;
 	int rv = -1;
-	int nid;
 
-	free(config->ecdhecurves);
-	config->ecdhecurves = NULL;
-	config->ecdhecurves_len = 0;
+	if (curve_names == NULL || strcasecmp(curve_names, "default") == 0)
+		curve_names = TLS_ECDHE_CURVES;
 
-	if (curves == NULL || strcasecmp(curves, "default") == 0)
-		curves = TLS_ECDHE_CURVES;
-
-	if ((cs = strdup(curves)) == NULL) {
+	if ((cs = strdup(curve_names)) == NULL) {
 		tls_config_set_errorx(config, "out of memory");
 		goto err;
 	}
 
 	q = cs;
+	i = 0;
+next:
 	while ((p = strsep(&q, ",:")) != NULL) {
 		while (*p == ' ' || *p == '\t')
 			p++;
 
-		nid = OBJ_sn2nid(p);
-		if (nid == NID_undef)
-			nid = OBJ_ln2nid(p);
-		if (nid == NID_undef)
-			nid = EC_curve_nist2nid(p);
-		if (nid == NID_undef) {
-			tls_config_set_errorx(config,
-			    "invalid ecdhe curve '%s'", p);
-			goto err;
+		for (j = 0; j < sizeof(curves) / sizeof(curves[0]); ++j) {
+			if (strcmp(p, curves[j].name) == 0) {
+				if (j < i) {
+					tls_config_set_errorx(config,
+					    "unsupported ecdhe curve order");
+					goto err;
+				}
+				supported_curves |= 1 << curves[j].id;
+				i = j;
+				goto next;
+			}
 		}
-
-		if ((curves_new = reallocarray(curves_list, curves_num + 1,
-		    sizeof(int))) == NULL) {
-			tls_config_set_errorx(config, "out of memory");
-			goto err;
-		}
-		curves_list = curves_new;
-		curves_list[curves_num] = nid;
-		curves_num++;
+		tls_config_set_errorx(config,
+		    "invalid ecdhe curve '%s'", p);
+		goto err;
 	}
 
-	config->ecdhecurves = curves_list;
-	config->ecdhecurves_len = curves_num;
-	curves_list = NULL;
+	config->ec.supported_curves = supported_curves;
 
 	rv = 0;
 
  err:
 	free(cs);
-	free(curves_list);
 
 	return (rv);
 }
@@ -696,39 +690,9 @@ tls_config_set_protocols(struct tls_config *config, uint32_t protocols)
 int
 tls_config_set_session_fd(struct tls_config *config, int session_fd)
 {
-	struct stat sb;
-	mode_t mugo;
+	tls_config_set_error(config, "sessions are not supported");
 
-	if (session_fd == -1) {
-		config->session_fd = session_fd;
-		return (0);
-	}
-
-	if (fstat(session_fd, &sb) == -1) {
-		tls_config_set_error(config, "failed to stat session file");
-		return (-1);
-	}
-	if (!S_ISREG(sb.st_mode)) {
-		tls_config_set_errorx(config,
-		    "session file is not a regular file");
-		return (-1);
-	}
-
-	if (sb.st_uid != getuid()) {
-		tls_config_set_errorx(config, "session file has incorrect "
-		    "owner (uid %i != %i)", sb.st_uid, getuid());
-		return (-1);
-	}
-	mugo = sb.st_mode & (S_IRWXU|S_IRWXG|S_IRWXO);
-	if (mugo != (S_IRUSR|S_IWUSR)) {
-		tls_config_set_errorx(config, "session file has incorrect "
-		    "permissions (%o != 600)", mugo);
-		return (-1);
-	}
-
-	config->session_fd = session_fd;
-
-	return (0);
+	return (-1);
 }
 
 int
@@ -795,12 +759,6 @@ tls_config_verify_client_optional(struct tls_config *config)
 	config->verify_client = 2;
 }
 
-void
-tls_config_skip_private_key_check(struct tls_config *config)
-{
-	config->skip_private_key_check = 1;
-}
-
 int
 tls_config_set_ocsp_staple_file(struct tls_config *config, const char *staple_file)
 {
@@ -820,28 +778,19 @@ int
 tls_config_set_session_id(struct tls_config *config,
     const unsigned char *session_id, size_t len)
 {
-	if (len > TLS_MAX_SESSION_ID_LENGTH) {
-		tls_config_set_errorx(config, "session ID too large");
-		return (-1);
-	}
-	memset(config->session_id, 0, sizeof(config->session_id));
-	memcpy(config->session_id, session_id, len);
-	return (0);
+	tls_config_set_errorx(config, "session resumption is not supported");
+	return (-1);
 }
 
 int
 tls_config_set_session_lifetime(struct tls_config *config, int lifetime)
 {
-	if (lifetime > TLS_MAX_SESSION_TIMEOUT) {
-		tls_config_set_errorx(config, "session lifetime too large");
-		return (-1);
-	}
-	if (lifetime != 0 && lifetime < TLS_MIN_SESSION_TIMEOUT) {
-		tls_config_set_errorx(config, "session lifetime too small");
+	if (lifetime != 0) {
+		tls_config_set_errorx(config,
+		    "session resumption is not supported");
 		return (-1);
 	}
 
-	config->session_lifetime = lifetime;
 	return (0);
 }
 
@@ -849,57 +798,6 @@ int
 tls_config_add_ticket_key(struct tls_config *config, uint32_t keyrev,
     unsigned char *key, size_t keylen)
 {
-	struct tls_ticket_key newkey;
-	int i;
-
-	if (TLS_TICKET_KEY_SIZE != keylen ||
-	    sizeof(newkey.aes_key) + sizeof(newkey.hmac_key) > keylen) {
-		tls_config_set_errorx(config,
-		    "wrong amount of ticket key data");
-		return (-1);
-	}
-
-	keyrev = htonl(keyrev);
-	memset(&newkey, 0, sizeof(newkey));
-	memcpy(newkey.key_name, &keyrev, sizeof(keyrev));
-	memcpy(newkey.aes_key, key, sizeof(newkey.aes_key));
-	memcpy(newkey.hmac_key, key + sizeof(newkey.aes_key),
-	    sizeof(newkey.hmac_key));
-	newkey.time = time(NULL);
-
-	for (i = 0; i < TLS_NUM_TICKETS; i++) {
-		struct tls_ticket_key *tk = &config->ticket_keys[i];
-		if (memcmp(newkey.key_name, tk->key_name,
-		    sizeof(tk->key_name)) != 0)
-			continue;
-
-		/* allow re-entry of most recent key */
-		if (i == 0 && memcmp(newkey.aes_key, tk->aes_key,
-		    sizeof(tk->aes_key)) == 0 && memcmp(newkey.hmac_key,
-		    tk->hmac_key, sizeof(tk->hmac_key)) == 0)
-			return (0);
-		tls_config_set_errorx(config, "ticket key already present");
-		return (-1);
-	}
-
-	memmove(&config->ticket_keys[1], &config->ticket_keys[0],
-	    sizeof(config->ticket_keys) - sizeof(config->ticket_keys[0]));
-	config->ticket_keys[0] = newkey;
-
-	config->ticket_autorekey = 0;
-
-	return (0);
-}
-
-int
-tls_config_ticket_autorekey(struct tls_config *config)
-{
-	unsigned char key[TLS_TICKET_KEY_SIZE];
-	int rv;
-
-	arc4random_buf(key, sizeof(key));
-	rv = tls_config_add_ticket_key(config, config->ticket_keyrev++, key,
-	    sizeof(key));
-	config->ticket_autorekey = 1;
-	return (rv);
+	tls_config_set_errorx(config, "session resumption is not supported");
+	return (-1);
 }

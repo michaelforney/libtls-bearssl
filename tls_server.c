@@ -19,10 +19,9 @@
 
 #include <arpa/inet.h>
 
-#include <openssl/ec.h>
-#include <openssl/err.h>
-#include <openssl/ssl.h>
-
+#include <errno.h>
+#include <stdlib.h>
+#include <unistd.h>
 #include <tls.h>
 #include "tls_internal.h"
 
@@ -63,40 +62,43 @@ tls_server_conn(struct tls *ctx)
 }
 
 static int
-tls_server_alpn_cb(SSL *ssl, const unsigned char **out, unsigned char *outlen,
-    const unsigned char *in, unsigned int inlen, void *arg)
+choose_algo(br_ssl_server_choices *choices, uint16_t hashes, unsigned version,
+    unsigned hash)
 {
-	struct tls *ctx = arg;
+	int rv = -1;
 
-	if (SSL_select_next_proto((unsigned char**)out, outlen,
-	    ctx->config->alpn, ctx->config->alpn_len, in, inlen) ==
-	    OPENSSL_NPN_NEGOTIATED)
-		return (SSL_TLSEXT_ERR_OK);
-
-	return (SSL_TLSEXT_ERR_NOACK);
+	if (version >= BR_TLS12) {
+		for (hash = 6; hash >= 2; --hash) {
+			if ((hashes & 1 << hash) != 0) {
+				rv = 0;
+				break;
+			}
+		}
+	} else if ((hashes & 1 << hash) != 0) {
+		rv = 0;
+	}
+	choices->algo_id = 0xFF00 | hash;
+	return rv;
 }
 
 static int
-tls_servername_cb(SSL *ssl, int *al, void *arg)
+policy_choose(const br_ssl_server_policy_class **vtable,
+    const br_ssl_server_context *ssl_ctx, br_ssl_server_choices *choices)
 {
-	struct tls *ctx = (struct tls *)arg;
-	struct tls_sni_ctx *sni_ctx;
+	struct tls *ctx = TLS_CONTAINER_OF(vtable, struct tls_conn, policy)->ctx;
+	struct tls_keypair *kp;
 	union tls_addr addrbuf;
-	struct tls *conn_ctx;
 	const char *name;
+	const br_suite_translated *suites;
+	size_t suites_len, i;
+	uint32_t hashes;
+	unsigned version;
 	int match;
 
-	if ((conn_ctx = SSL_get_app_data(ssl)) == NULL)
-		goto err;
-
-	if ((name = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name)) ==
-	    NULL) {
-		/*
-		 * The servername callback gets called even when there is no
-		 * TLS servername extension provided by the client. Sigh!
-		 */
-		return (SSL_TLSEXT_ERR_NOACK);
-	}
+	name = br_ssl_engine_get_server_name(&ssl_ctx->eng);
+	version = br_ssl_engine_get_version(&ssl_ctx->eng);
+	hashes = br_ssl_server_get_client_hashes(ssl_ctx);
+	suites = br_ssl_server_get_client_suites(ssl_ctx, &suites_len);
 
 	/*
 	 * Per RFC 6066 section 3: ensure that name is not an IP literal.
@@ -106,246 +108,205 @@ tls_servername_cb(SSL *ssl, int *al, void *arg)
 	 * failures, pretend that we did not receive the extension.
 	 */
 	if (inet_pton(AF_INET, name, &addrbuf) == 1 ||
-            inet_pton(AF_INET6, name, &addrbuf) == 1)
-		return (SSL_TLSEXT_ERR_NOACK);
-
-	free((char *)conn_ctx->servername);
-	if ((conn_ctx->servername = strdup(name)) == NULL)
-		goto err;
-
-	/* Find appropriate SSL context for requested servername. */
-	for (sni_ctx = ctx->sni_ctx; sni_ctx != NULL; sni_ctx = sni_ctx->next) {
-		if (tls_check_name(ctx, sni_ctx->ssl_cert, name,
-		    &match) == -1)
-			goto err;
-		if (match) {
-			conn_ctx->keypair = sni_ctx->keypair;
-			SSL_set_SSL_CTX(conn_ctx->ssl_conn, sni_ctx->ssl_ctx);
-			return (SSL_TLSEXT_ERR_OK);
-		}
+	    inet_pton(AF_INET6, name, &addrbuf) == 1) {
+		name = NULL;
 	}
 
-	/* No match, use the existing context/certificate. */
-	return (SSL_TLSEXT_ERR_OK);
-
- err:
-	/*
-	 * There is no way to tell libssl that an internal failure occurred.
-	 * The only option we have is to return a fatal alert.
-	 */
-	*al = TLS1_AD_INTERNAL_ERROR;
-	return (SSL_TLSEXT_ERR_ALERT_FATAL);
-}
-
-static struct tls_ticket_key *
-tls_server_ticket_key(struct tls_config *config, unsigned char *keyname)
-{
-	struct tls_ticket_key *key = NULL;
-	time_t now;
-	int i;
-
-	now = time(NULL);
-	if (config->ticket_autorekey == 1) {
-		if (now - 3 * (config->session_lifetime / 4) >
-		    config->ticket_keys[0].time) {
-			if (tls_config_ticket_autorekey(config) == -1)
-				return (NULL);
-		}
-	}
-	for (i = 0; i < TLS_NUM_TICKETS; i++) {
-		struct tls_ticket_key *tk = &config->ticket_keys[i];
-		if (now - config->session_lifetime > tk->time)
-			continue;
-		if (keyname == NULL || timingsafe_memcmp(keyname,
-		    tk->key_name, sizeof(tk->key_name)) == 0) {
-			key = tk;
+	for (kp = ctx->config->keypair; kp != NULL; kp = kp->next) {
+		if (tls_check_name(ctx, &kp->chain[0], name, &match) == -1)
+			return 0;
+		if (match)
 			break;
+	}
+
+	if (kp == NULL)
+		kp = ctx->config->keypair;
+
+	ctx->keypair = kp;
+	choices->chain = kp->chain;
+	choices->chain_len = kp->chain_len;
+
+	for (i = 0; i < suites_len; ++i) {
+		choices->cipher_suite = suites[i][0];
+		switch (suites[i][1] >> 12) {
+		case BR_SSLKEYX_RSA:
+			if (kp->key_type != BR_KEYTYPE_RSA)
+				continue;
+			return 1;
+		case BR_SSLKEYX_ECDHE_RSA:
+			if (kp->key_type != BR_KEYTYPE_RSA)
+				continue;
+			if (choose_algo(choices, hashes, version, br_md5sha1_ID) != 0)
+				continue;
+			return 1;
+		case BR_SSLKEYX_ECDHE_ECDSA:
+			if (kp->key_type != BR_KEYTYPE_EC)
+				continue;
+			if (choose_algo(choices, hashes >> 8, version, br_sha1_ID) != 0)
+				continue;
+			return 1;
+		case BR_SSLKEYX_ECDH_RSA:
+			if (kp->key_type != BR_KEYTYPE_EC ||
+			    kp->signer_key_type != BR_KEYTYPE_RSA)
+				continue;
+			return 1;
+		case BR_SSLKEYX_ECDH_ECDSA:
+			if (kp->key_type == BR_KEYTYPE_EC &&
+			    kp->signer_key_type == BR_KEYTYPE_EC)
+				continue;
+			return 1;
 		}
 	}
-	return (key);
+
+	return 0;
 }
 
-static int
-tls_server_ticket_cb(SSL *ssl, unsigned char *keyname, unsigned char *iv,
-    EVP_CIPHER_CTX *ctx, HMAC_CTX *hctx, int mode)
+static uint32_t
+policy_do_keyx(const br_ssl_server_policy_class **vtable, unsigned char *data, size_t *len)
 {
-	struct tls_ticket_key *key;
-	struct tls *tls_ctx;
+	struct tls *ctx = TLS_CONTAINER_OF(vtable, struct tls_conn, policy)->ctx;
+	struct tls_keypair *kp = ctx->keypair;
+	const br_ec_impl *ec;
+	br_rsa_private rsa;
+	size_t xoff, xlen;
+	uint32_t rv = 0;
 
-	if ((tls_ctx = SSL_get_app_data(ssl)) == NULL)
-		return (-1);
-
-	if (mode == 1) {
-		/* create new session */
-		key = tls_server_ticket_key(tls_ctx->config, NULL);
-		if (key == NULL) {
-			tls_set_errorx(tls_ctx, "no valid ticket key found");
-			return (-1);
-		}
-
-		memcpy(keyname, key->key_name, sizeof(key->key_name));
-		arc4random_buf(iv, EVP_MAX_IV_LENGTH);
-		EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL,
-		    key->aes_key, iv);
-		HMAC_Init_ex(hctx, key->hmac_key, sizeof(key->hmac_key),
-		    EVP_sha256(), NULL);
-		return (0);
-	} else {
-		/* get key by name */
-		key = tls_server_ticket_key(tls_ctx->config, keyname);
-		if (key == NULL)
-			return (0);
-
-		EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL,
-		    key->aes_key, iv);
-		HMAC_Init_ex(hctx, key->hmac_key, sizeof(key->hmac_key),
-		    EVP_sha256(), NULL);
-
-		/* time to renew the ticket? is it the primary key? */
-		if (key != &tls_ctx->config->ticket_keys[0])
-			return (2);
-		return (1);
+	switch (kp->key_type) {
+	case BR_KEYTYPE_RSA:
+		rsa = br_rsa_private_get_default();
+		rv = br_rsa_ssl_decrypt(rsa, &kp->key.rsa, data, *len);
+		break;
+	case BR_KEYTYPE_EC:
+		ec = br_ec_get_default();
+		rv = ec->mul(data, *len, kp->key.ec.x, kp->key.ec.xlen,
+		    kp->key.ec.curve);
+		xoff = ec->xoff(kp->key.ec.curve, &xlen);
+		memmove(data, data + xoff, xlen);
+		*len = xlen;
+		break;
 	}
+
+	return (rv);
 }
 
-static int
-tls_configure_server_ssl(struct tls *ctx, SSL_CTX **ssl_ctx,
-    struct tls_keypair *keypair)
+static size_t
+policy_do_sign(const br_ssl_server_policy_class **vtable, unsigned algo_id,
+    unsigned char *data, size_t hv_len, size_t len)
 {
-	SSL_CTX_free(*ssl_ctx);
+	struct tls *ctx = TLS_CONTAINER_OF(vtable, struct tls_conn, policy)->ctx;
+	struct tls_keypair *kp = ctx->keypair;
+	unsigned char hv[64];
+	size_t sig_len;
+	const unsigned char *hash_oid;
+	const br_hash_class *hash_impl;
+	const br_ec_impl *ec;
+	br_ecdsa_sign ecdsa_sign;
+	br_rsa_pkcs1_sign rsa_sign;
+	size_t rv = 0;
 
-	if ((*ssl_ctx = SSL_CTX_new(SSLv23_server_method())) == NULL) {
-		tls_set_errorx(ctx, "ssl context failure");
+	if (hv_len > sizeof(hv)) {
+		tls_set_errorx(ctx, "buffer too small for hash value");
 		goto err;
 	}
 
-	SSL_CTX_set_options(*ssl_ctx, SSL_OP_NO_CLIENT_RENEGOTIATION);
+	memcpy(hv, data, hv_len);
 
-	if (SSL_CTX_set_tlsext_servername_callback(*ssl_ctx,
-	    tls_servername_cb) != 1) {
-		tls_set_error(ctx, "failed to set servername callback");
-		goto err;
-	}
-	if (SSL_CTX_set_tlsext_servername_arg(*ssl_ctx, ctx) != 1) {
-		tls_set_error(ctx, "failed to set servername callback arg");
-		goto err;
-	}
-
-	if (tls_configure_ssl(ctx, *ssl_ctx) != 0)
-		goto err;
-	if (tls_configure_ssl_keypair(ctx, *ssl_ctx, keypair, 1) != 0)
-		goto err;
-	if (ctx->config->verify_client != 0) {
-		int verify = SSL_VERIFY_PEER;
-		if (ctx->config->verify_client == 1)
-			verify |= SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
-		if (tls_configure_ssl_verify(ctx, *ssl_ctx, verify) == -1)
-			goto err;
-	}
-
-	if (ctx->config->alpn != NULL)
-		SSL_CTX_set_alpn_select_cb(*ssl_ctx, tls_server_alpn_cb,
-		    ctx);
-
-	if (ctx->config->dheparams == -1)
-		SSL_CTX_set_dh_auto(*ssl_ctx, 1);
-	else if (ctx->config->dheparams == 1024)
-		SSL_CTX_set_dh_auto(*ssl_ctx, 2);
-
-	if (ctx->config->ecdhecurves != NULL) {
-		SSL_CTX_set_ecdh_auto(*ssl_ctx, 1);
-		if (SSL_CTX_set1_groups(*ssl_ctx, ctx->config->ecdhecurves,
-		    ctx->config->ecdhecurves_len) != 1) {
-			tls_set_errorx(ctx, "failed to set ecdhe curves");
+	switch (kp->key_type) {
+	case BR_KEYTYPE_RSA:
+		switch (algo_id & 0xFF) {
+		case br_sha1_ID:
+			hash_oid = BR_HASH_OID_SHA1;
+			break;
+		case br_sha224_ID:
+			hash_oid = BR_HASH_OID_SHA224;
+			break;
+		case br_sha256_ID:
+			hash_oid = BR_HASH_OID_SHA256;
+			break;
+		case br_sha384_ID:
+			hash_oid = BR_HASH_OID_SHA384;
+			break;
+		case br_sha512_ID:
+			hash_oid = BR_HASH_OID_SHA512;
+			break;
+		default:
+			tls_set_errorx(ctx, "unknown hash function for RSA signature");
 			goto err;
 		}
-	}
 
-	if (ctx->config->ciphers_server == 1)
-		SSL_CTX_set_options(*ssl_ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
-
-	if (SSL_CTX_set_tlsext_status_cb(*ssl_ctx, tls_ocsp_stapling_cb) != 1) {
-		tls_set_errorx(ctx, "failed to add OCSP stapling callback");
-		goto err;
-	}
-
-	if (ctx->config->session_lifetime > 0) {
-		/* set the session lifetime and enable tickets */
-		SSL_CTX_set_timeout(*ssl_ctx, ctx->config->session_lifetime);
-		SSL_CTX_clear_options(*ssl_ctx, SSL_OP_NO_TICKET);
-		if (!SSL_CTX_set_tlsext_ticket_key_cb(*ssl_ctx,
-		    tls_server_ticket_cb)) {
-			tls_set_error(ctx,
-			    "failed to set the TLS ticket callback");
+		sig_len = (kp->key.rsa.n_bitlen + 7) >> 3;
+		if (len < sig_len) {
+			tls_set_errorx(ctx, "buffer is too small for RSA signature");
 			goto err;
 		}
-	}
 
-	if (SSL_CTX_set_session_id_context(*ssl_ctx, ctx->config->session_id,
-	    sizeof(ctx->config->session_id)) != 1) {
-		tls_set_error(ctx, "failed to set session id context");
-		goto err;
-	}
-
-	return (0);
-
-  err:
-	SSL_CTX_free(*ssl_ctx);
-	*ssl_ctx = NULL;
-
-	return (-1);
-}
-
-static int
-tls_configure_server_sni(struct tls *ctx)
-{
-	struct tls_sni_ctx **sni_ctx;
-	struct tls_keypair *kp;
-
-	if (ctx->config->keypair->next == NULL)
-		return (0);
-
-	/* Set up additional SSL contexts for SNI. */
-	sni_ctx = &ctx->sni_ctx;
-	for (kp = ctx->config->keypair->next; kp != NULL; kp = kp->next) {
-		if ((*sni_ctx = tls_sni_ctx_new()) == NULL) {
-			tls_set_errorx(ctx, "out of memory");
+		rsa_sign = br_rsa_pkcs1_sign_get_default();
+		if (rsa_sign(hash_oid, hv, hv_len, &kp->key.rsa, data) != 1) {
+			tls_set_errorx(ctx, "RSA sign failed");
 			goto err;
 		}
-		(*sni_ctx)->keypair = kp;
-		if (tls_configure_server_ssl(ctx, &(*sni_ctx)->ssl_ctx, kp) == -1)
-			goto err;
-		if (tls_keypair_load_cert(kp, &ctx->error,
-		    &(*sni_ctx)->ssl_cert) == -1)
-			goto err;
-		sni_ctx = &(*sni_ctx)->next;
-	}
 
-	return (0);
+		rv = sig_len;
+		break;
+	case BR_KEYTYPE_EC:
+		switch (algo_id & 0xFF) {
+		case br_md5sha1_ID:
+			hash_impl = &br_md5sha1_vtable;
+			break;
+		case br_sha1_ID:
+			hash_impl = &br_sha1_vtable;
+			break;
+		case br_sha224_ID:
+			hash_impl = &br_sha224_vtable;
+			break;
+		case br_sha256_ID:
+			hash_impl = &br_sha256_vtable;
+			break;
+		case br_sha384_ID:
+			hash_impl = &br_sha384_vtable;
+			break;
+		case br_sha512_ID:
+			hash_impl = &br_sha512_vtable;
+			break;
+		default:
+			tls_set_errorx(ctx, "unknown hash function for ECDSA signature");
+			goto err;
+		}
+
+		/* maximum size of supported ECDSA signature (P-512) */
+		if (len < 139) {
+			tls_set_errorx(ctx, "buffer is too small for RSA signature");
+			goto err;
+		}
+
+		ec = br_ec_get_default();
+		ecdsa_sign = br_ecdsa_sign_asn1_get_default();
+		if ((rv = ecdsa_sign(ec, hash_impl, hv, &kp->key.ec, data)) == 0) {
+			tls_set_errorx(ctx, "ECDSA sign failed");
+			goto err;
+		}
+		break;
+	default:
+		tls_set_errorx(ctx, "unknown private key type");
+		break;
+	}
 
  err:
-	return (-1);
+	return rv;
 }
 
-int
-tls_configure_server(struct tls *ctx)
-{
-	if (tls_configure_server_ssl(ctx, &ctx->ssl_ctx,
-	    ctx->config->keypair) == -1)
-		goto err;
-	if (tls_configure_server_sni(ctx) == -1)
-		goto err;
-
-	return (0);
-
- err:
-	return (-1);
-}
+static const br_ssl_server_policy_class policy_vtable = {
+	.choose = policy_choose,
+	.do_keyx = policy_do_keyx,
+	.do_sign = policy_do_sign,
+};
 
 static struct tls *
 tls_accept_common(struct tls *ctx)
 {
 	struct tls *conn_ctx = NULL;
+	struct tls_conn *conn;
+	uint32_t flags;
 
 	if ((ctx->flags & TLS_SERVER) == 0) {
 		tls_set_errorx(ctx, "not a server context");
@@ -357,15 +318,40 @@ tls_accept_common(struct tls *ctx)
 		goto err;
 	}
 
-	if ((conn_ctx->ssl_conn = SSL_new(ctx->ssl_ctx)) == NULL) {
-		tls_set_errorx(ctx, "ssl failure");
+	if ((conn = tls_conn_new(ctx)) == NULL) {
 		goto err;
 	}
 
-	if (SSL_set_app_data(conn_ctx->ssl_conn, conn_ctx) != 1) {
-		tls_set_errorx(ctx, "ssl application data failure");
-		goto err;
+	conn->ctx = conn_ctx;
+	conn_ctx->conn = conn;
+
+	conn->policy = &policy_vtable;
+	br_ssl_server_set_policy(&conn->u.server, &conn->policy);
+
+	flags = BR_OPT_NO_RENEGOTIATION;
+	if (conn_ctx->config->verify_client != 0) {
+		if (tls_configure_x509(conn_ctx) != 0)
+			goto err;
+
+		if (ctx->config->ca_len == 0) {
+			tls_set_error(ctx, "cannot verify client without trust anchors");
+			goto err;
+		}
+
+		br_ssl_server_set_trust_anchor_names_alt(&conn_ctx->conn->u.server,
+		    ctx->config->ca, ctx->config->ca_len);
+
+		if (conn_ctx->config->verify_client == 2)
+			flags |= BR_OPT_TOLERATE_NO_CLIENT_AUTH;
 	}
+	if (conn_ctx->config->ciphers_server == 1)
+		flags |= BR_OPT_ENFORCE_SERVER_PREFERENCES;
+	br_ssl_engine_set_all_flags(&conn_ctx->conn->u.engine, flags);
+
+	/* DHE is not supported by BearSSL, so it is safe to ignore
+	 * ctx->config->dheparams */
+
+	br_ssl_server_reset(&conn_ctx->conn->u.server);
 
 	return conn_ctx;
 
@@ -389,11 +375,11 @@ tls_accept_fds(struct tls *ctx, struct tls **cctx, int fd_read, int fd_write)
 	if ((conn_ctx = tls_accept_common(ctx)) == NULL)
 		goto err;
 
-	if (SSL_set_rfd(conn_ctx->ssl_conn, fd_read) != 1 ||
-	    SSL_set_wfd(conn_ctx->ssl_conn, fd_write) != 1) {
-		tls_set_errorx(ctx, "ssl file descriptor failure");
-		goto err;
-	}
+	conn_ctx->read_cb = tls_fd_read_cb;
+	conn_ctx->fd_read = fd_read;
+	conn_ctx->write_cb = tls_fd_write_cb;
+	conn_ctx->fd_write = fd_write;
+	conn_ctx->cb_arg = NULL;
 
 	*cctx = conn_ctx;
 
@@ -425,30 +411,4 @@ tls_accept_cbs(struct tls *ctx, struct tls **cctx,
 	*cctx = NULL;
 
 	return (-1);
-}
-
-int
-tls_handshake_server(struct tls *ctx)
-{
-	int ssl_ret;
-	int rv = -1;
-
-	if ((ctx->flags & TLS_SERVER_CONN) == 0) {
-		tls_set_errorx(ctx, "not a server connection context");
-		goto err;
-	}
-
-	ctx->state |= TLS_SSL_NEEDS_SHUTDOWN;
-
-	ERR_clear_error();
-	if ((ssl_ret = SSL_accept(ctx->ssl_conn)) != 1) {
-		rv = tls_ssl_error(ctx, ctx->ssl_conn, ssl_ret, "handshake");
-		goto err;
-	}
-
-	ctx->state |= TLS_HANDSHAKE_COMPLETE;
-	rv = 0;
-
- err:
-	return (rv);
 }

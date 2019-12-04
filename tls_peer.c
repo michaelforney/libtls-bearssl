@@ -18,8 +18,6 @@
 
 #include <stdio.h>
 
-#include <openssl/x509.h>
-
 #include <tls.h>
 #include "tls_internal.h"
 
@@ -49,7 +47,7 @@ tls_peer_cert_subject(struct tls *ctx)
 int
 tls_peer_cert_provided(struct tls *ctx)
 {
-	return (ctx->ssl_peer_cert != NULL);
+	return (ctx->peer_chain != NULL);
 }
 
 int
@@ -57,10 +55,10 @@ tls_peer_cert_contains_name(struct tls *ctx, const char *name)
 {
 	int match;
 
-	if (ctx->ssl_peer_cert == NULL)
+	if (ctx->peer_chain == NULL)
 		return (0);
 
-	if (tls_check_name(ctx, ctx->ssl_peer_cert, name, &match) == -1)
+	if (tls_check_name(ctx, &ctx->peer_chain[0], name, &match) == -1)
 		return (0);
 
 	return (match);
@@ -69,8 +67,6 @@ tls_peer_cert_contains_name(struct tls *ctx, const char *name)
 time_t
 tls_peer_cert_notbefore(struct tls *ctx)
 {
-	if (ctx->ssl_peer_cert == NULL)
-		return (-1);
 	if (ctx->conninfo == NULL)
 		return (-1);
 	return (ctx->conninfo->notbefore);
@@ -79,8 +75,6 @@ tls_peer_cert_notbefore(struct tls *ctx)
 time_t
 tls_peer_cert_notafter(struct tls *ctx)
 {
-	if (ctx->ssl_peer_cert == NULL)
-		return (-1);
 	if (ctx->conninfo == NULL)
 		return (-1);
 	return (ctx->conninfo->notafter);
@@ -89,8 +83,6 @@ tls_peer_cert_notafter(struct tls *ctx)
 const uint8_t *
 tls_peer_cert_chain_pem(struct tls *ctx, size_t *size)
 {
-	if (ctx->ssl_peer_cert == NULL)
-		return (NULL);
 	if (ctx->conninfo == NULL)
 		return (NULL);
 	*size = ctx->conninfo->peer_cert_len;

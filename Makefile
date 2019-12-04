@@ -1,56 +1,59 @@
-#	$OpenBSD: Makefile,v 1.33 2018/02/08 05:56:49 jsing Exp $
+.POSIX:
+.PHONY: all clean
 
-.include <bsd.own.mk>
-.ifndef NOMAN
-SUBDIR=	man
-.endif
+-include config.mk
 
-CFLAGS+= -Wall -Wimplicit -Wundef
-.if ${COMPILER_VERSION:L} == "clang"
-CFLAGS+= -Werror
-.endif
-CFLAGS+= -DLIBRESSL_INTERNAL
+PREFIX?=/usr/local
+INCDIR?=$(PREFIX)/include
+LIBDIR?=$(PREFIX)/lib
+MANDIR?=$(PREFIX)/share/man
+CFLAGS+=-Wall -Wpedantic -D _DEFAULT_SOURCE -I .
 
-CLEANFILES= ${VERSION_SCRIPT}
+OBJ=\
+	tls.o\
+	tls_bio_cb.o\
+	tls_client.o\
+	tls_config.o\
+	tls_conninfo.o\
+	tls_keypair.o\
+	tls_ocsp.o\
+	tls_peer.o\
+	tls_server.o\
+	tls_util.o\
+	tls_verify.o\
+	bearssl.o\
+	compat/freezero.o\
+	compat/reallocarray.o\
+	compat/timingsafe_memcmp.o
 
-WARNINGS= Yes
+MAN=\
+	man/tls_accept_socket.3\
+	man/tls_client.3\
+	man/tls_config_ocsp_require_stapling.3\
+	man/tls_config_set_protocols.3\
+	man/tls_config_set_session_id.3\
+	man/tls_config_verify.3\
+	man/tls_conn_version.3\
+	man/tls_connect.3\
+	man/tls_init.3\
+	man/tls_load_file.3\
+	man/tls_ocsp_process_response.3\
+	man/tls_read.3
 
-LIB=	tls
+all: libtls.a
 
-DPADD=	${LIBCRYPTO} ${LIBSSL}
+$(OBJ): tls.h tls_internal.h compat.h
 
-LDADD+= -L${BSDOBJDIR}/lib/libcrypto -lcrypto
-LDADD+= -L${BSDOBJDIR}/lib/libssl -lssl
+libtls.a: $(OBJ)
+	$(AR) cr $@ $(OBJ)
 
-VERSION_SCRIPT=	Symbols.map
-SYMBOL_LIST=	${.CURDIR}/Symbols.list
+install: libtls.a tls.h $(MAN)
+	mkdir -p $(DESTDIR)$(INCDIR)
+	cp tls.h $(DESTDIR)$(INCDIR)/
+	mkdir -p $(DESTDIR)$(LIBDIR)
+	cp libtls.a $(DESTDIR)$(LIBDIR)/
+	mkdir -p $(DESTDIR)$(MANDIR)/man3
+	cp $(MAN) $(DESTDIR)$(MANDIR)/man3/
 
-HDRS=	tls.h
-
-SRCS=	tls.c \
-	tls_bio_cb.c \
-	tls_client.c \
-	tls_config.c \
-	tls_conninfo.c \
-	tls_keypair.c \
-	tls_peer.c \
-	tls_server.c \
-	tls_util.c \
-	tls_ocsp.c \
-	tls_verify.c
-
-includes:
-	@cd ${.CURDIR}; for i in $(HDRS); do \
-	    j="cmp -s $$i ${DESTDIR}/usr/include/$$i || \
-	    ${INSTALL} ${INSTALL_COPY} -o ${BINOWN} -g ${BINGRP} -m 444 $$i\
-		${DESTDIR}/usr/include/"; \
-	    echo $$j; \
-	    eval "$$j"; \
-	done;
-
-${VERSION_SCRIPT}: ${SYMBOL_LIST}
-	{ printf '{\n\tglobal:\n'; \
-	  sed '/^[._a-zA-Z]/s/$$/;/; s/^/		/' ${SYMBOL_LIST}; \
-	  printf '\n\tlocal:\n\t\t*;\n};\n'; } >$@.tmp && mv $@.tmp $@
-
-.include <bsd.lib.mk>
+clean:
+	rm -f libtls.a $(OBJ)
