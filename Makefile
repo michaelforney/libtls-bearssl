@@ -44,6 +44,9 @@ all: libtls.a
 
 $(OBJ): tls.h tls_internal.h compat.h
 
+.c.o:
+	$(CC) $(CFLAGS) -c -o $@ $<
+
 libtls.a: $(OBJ)
 	$(AR) cr $@ $(OBJ)
 
