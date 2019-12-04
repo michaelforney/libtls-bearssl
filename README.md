@@ -41,5 +41,15 @@ they are not supported by BearSSL.
 - Session caching. BearSSL does implement this (though not session
   tickets, RFC 5077), so this may be added in the future.
 
+## Mailing list
+
+Feel free to use the mailing list at
+https://lists.sr.ht/~mcf/libtls-bearssl for patches, questions, or
+general discussion.
+
+## Issue tracker
+
+Please report any issues to https://todo.sr.ht/~mcf/libtls-bearssl.
+
 [libtls]: http://man.openbsd.org/tls_init
 [BearSSL]: https://bearssl.org/
