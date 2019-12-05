@@ -496,8 +496,46 @@ tls_configure_x509(struct tls *ctx)
 
 	x509->ctx = ctx;
 	x509->vtable = &x509_vtable;
+	x509->subject_elts[TLS_DN_C] = (br_name_element){
+		/* 2.5.4.6,  id-at-countryName */
+		.oid = (unsigned char *)"\x03\x55\x04\x06",
+		.buf = x509->subject.C,
+		.len = sizeof(x509->subject.C),
+	};
+	x509->subject_elts[TLS_DN_ST] = (br_name_element){
+		/* 2.5.4.8,  id-at-stateOrProvinceName */
+		.oid = (unsigned char *)"\x03\x55\x04\x08",
+		.buf = x509->subject.ST,
+		.len = sizeof(x509->subject.ST),
+	};
+	x509->subject_elts[TLS_DN_L] = (br_name_element){
+		/* 2.5.4.7,  id-at-localityName */
+		.oid = (unsigned char *)"\x03\x55\x04\x07",
+		.buf = x509->subject.L,
+		.len = sizeof(x509->subject.L),
+	};
+	x509->subject_elts[TLS_DN_O] = (br_name_element){
+		/* 2.5.4.10, id-at-organizationName */
+		.oid = (unsigned char *)"\x03\x55\x04\x0a",
+		.buf = x509->subject.O,
+		.len = sizeof(x509->subject.O),
+	};
+	x509->subject_elts[TLS_DN_OU] = (br_name_element){
+		/* 2.5.4.11, id-at-organizationalUnitName */
+		.oid = (unsigned char *)"\x03\x55\x04\x0b",
+		.buf = x509->subject.OU,
+		.len = sizeof(x509->subject.OU),
+	};
+	x509->subject_elts[TLS_DN_CN] = (br_name_element){
+		/* 2.5.4.3,  id-at-commonName */
+		.oid = (unsigned char *)"\x03\x55\x04\x03",
+		.buf = x509->subject.CN,
+		.len = sizeof(x509->subject.CN),
+	};
 	br_x509_minimal_init_full(&x509->minimal, ctx->config->ca,
 	    ctx->config->ca_len);
+	br_x509_minimal_set_name_elements(&x509->minimal,
+	    x509->subject_elts, TLS_DN_NUM_ELTS);
 	br_ssl_engine_set_x509(&ctx->conn->u.engine, &x509->vtable);
 
 	ctx->conn->x509 = x509;

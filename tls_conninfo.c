@@ -78,11 +78,84 @@ tls_get_peer_cert_issuer(struct tls *ctx,  char **issuer)
 	return (0);
 }
 
+static size_t
+escape_name_element(char *dst, const char *src)
+{
+	size_t len = 0;
+	int esc;
+
+	for (; *src; ++src) {
+		switch (*src) {
+		case ',':
+		case '+':
+		case '"':
+		case '\\':
+		case '<':
+		case '>':
+		case ':':
+			esc = 1;
+			break;
+		case ' ':
+			esc = len == 0 || !src[1];
+			break;
+		case '#':
+			esc = len == 0;
+			break;
+		default:
+			esc = 0;
+		}
+		if (dst) {
+			if (esc)
+				*dst++ = '\\';
+			*dst++ = *src;
+		}
+		len += 1 + esc;
+	}
+
+	return len;
+}
+
 static int
 tls_get_peer_cert_subject(struct tls *ctx, char **subject)
 {
-	/* XXX: Get certificate subject string from X.509 minimal engine */
+	static const char attr[][3] = {
+		[TLS_DN_C] = "C",
+		[TLS_DN_ST] = "ST",
+		[TLS_DN_L] = "L",
+		[TLS_DN_O] = "O",
+		[TLS_DN_OU] = "OU",
+		[TLS_DN_CN] = "CN",
+	};
+	char *p;
+	size_t i, len;
+	br_name_element *elts;
+
 	*subject = NULL;
+	if (ctx->conn == NULL || ctx->conn->x509 == NULL)
+		return (-1);
+
+	/* calculate subject string length */
+	elts = ctx->conn->x509->subject_elts;
+	len = 0;
+	for (i = 0; i < TLS_DN_NUM_ELTS; ++i) {
+		if (elts[i].status == -1)
+			return (-1);
+		if (elts[i].status == 1)
+			len += 4 + escape_name_element(NULL, elts[i].buf);
+	}
+
+	if ((*subject = p = malloc(len)) == NULL)
+		return (-1);
+
+	for (i = 0; i < TLS_DN_NUM_ELTS; ++i) {
+		if (elts[i].status != 1)
+			continue;
+		p = stpcpy(p, attr[i]);
+		*p++ = '=';
+		p += escape_name_element(p, elts[i].buf);
+		*p++ = ',';
+	}
+	p[-1] = '\0';
 
 	return (0);
 }

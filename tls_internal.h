@@ -116,11 +116,32 @@ struct tls_conninfo {
 #define TLS_SSL_NEEDS_SHUTDOWN	(1 << 3)
 #define TLS_SSL_IN_SHUTDOWN	(1 << 4)
 
+enum {
+	TLS_DN_C,
+	TLS_DN_ST,
+	TLS_DN_L,
+	TLS_DN_O,
+	TLS_DN_OU,
+	TLS_DN_CN,
+
+	TLS_DN_NUM_ELTS
+};
+
 struct tls_x509 {
 	struct tls *ctx;
 	const br_x509_class *vtable;
 	br_x509_minimal_context minimal;
 	int depth;
+
+	struct {
+		char C[3];
+		char ST[129];
+		char L[129];
+		char O[65];
+		char OU[65];
+		char CN[65];
+	} subject;
+	br_name_element subject_elts[TLS_DN_NUM_ELTS];
 };
 
 struct tls_conn {
