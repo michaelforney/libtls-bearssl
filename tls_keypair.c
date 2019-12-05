@@ -208,16 +208,12 @@ tls_keypair_set_key_mem(struct tls_keypair *keypair, struct tls_error *error,
 		len -= pushed;
 		switch (br_pem_decoder_event(&pc)) {
 		case BR_PEM_BEGIN_OBJ:
-			if (key_type != 0) {
-				tls_error_setx(error, "multiple secret keys");
-				goto err;
-			}
 			name = br_pem_decoder_name(&pc);
 			if (strcmp(name, "RSA PRIVATE KEY") != 0 &&
 			    strcmp(name, "EC PRIVATE KEY") != 0 &&
 			    strcmp(name, "PRIVATE KEY") != 0) {
-				tls_error_setx(error, "invalid secret key");
-				goto err;
+				br_pem_decoder_setdest(&pc, NULL, NULL);
+				break;
 			}
 			br_pem_decoder_setdest(&pc, append_skey, &kc);
 			br_skey_decoder_init(&kc);
@@ -230,6 +226,7 @@ tls_keypair_set_key_mem(struct tls_keypair *keypair, struct tls_error *error,
 				goto err;
 			}
 			key_type = br_skey_decoder_key_type(&kc);
+			len = 0;
 			break;
 		default:
 			tls_error_setx(error, "secret key decoding failed");
