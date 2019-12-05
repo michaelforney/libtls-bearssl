@@ -319,10 +319,8 @@ tls_keypair_check(struct tls_keypair *keypair, struct tls_error *error)
 	br_ec_public_key ec_pkey;
 	const br_ec_impl *ec;
 	br_rsa_compute_modulus compute_modulus;
-	br_rsa_compute_pubexp compute_pubexp;
 	unsigned char n[512]; /* 4096 bits */
 	size_t nlen;
-	uint32_t pubexp, cert_pubexp;
 	unsigned char kbuf[BR_EC_KBUF_PUB_MAX_SIZE];
 	int rv = -1, ret;
 
@@ -350,18 +348,6 @@ tls_keypair_check(struct tls_keypair *keypair, struct tls_error *error)
 		compute_modulus(n, &keypair->key.rsa);
 		if (nlen != pkey->key.rsa.nlen ||
 		    memcmp(pkey->key.rsa.n, n, nlen) != 0)
-			goto err;
-		compute_pubexp = br_rsa_compute_pubexp_get_default();
-		if ((pubexp = compute_pubexp(&keypair->key.rsa)) == 0)
-			goto err;
-		if (pkey->key.rsa.elen > 4)
-			goto err;
-		cert_pubexp = 0;
-		while (pkey->key.rsa.elen > 0) {
-			cert_pubexp = cert_pubexp << 8 |
-			    pkey->key.rsa.e[--pkey->key.rsa.elen];
-		}
-		if (pubexp != cert_pubexp)
 			goto err;
 		break;
 	case BR_KEYTYPE_EC:
