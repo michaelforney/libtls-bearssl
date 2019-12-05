@@ -196,7 +196,7 @@ tls_keypair_set_key_mem(struct tls_keypair *keypair, struct tls_error *error,
 	int key_type = 0;
 	const br_ec_private_key *ec;
 	const br_rsa_private_key *rsa;
-	int err;
+	int err, in_key = 0;
 	int rv = -1;
 
 	tls_keypair_clear_key(keypair);
@@ -217,8 +217,12 @@ tls_keypair_set_key_mem(struct tls_keypair *keypair, struct tls_error *error,
 			}
 			br_pem_decoder_setdest(&pc, append_skey, &kc);
 			br_skey_decoder_init(&kc);
+			in_key = 1;
 			break;
 		case BR_PEM_END_OBJ:
+			if (!in_key)
+				break;
+			in_key = 0;
 			if ((err = br_skey_decoder_last_error(&kc)) != 0) {
 				tls_error_setx(error,
 				    "secret key decoding failed: %s",
@@ -277,7 +281,7 @@ tls_keypair_set_key_mem(struct tls_keypair *keypair, struct tls_error *error,
 		memcpy(data, ec->x, ec->xlen);
 		break;
 	default:
-		tls_error_setx(error, "unsupported secret key type");
+		tls_error_setx(error, "unsupported or missing secret key");
 		goto err;
 	}
 
