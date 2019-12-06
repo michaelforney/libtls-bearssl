@@ -30,9 +30,8 @@ they are not supported by BearSSL.
 - OCSP stapling. Attempts to configure this will fail.
 - Certificate revocation list (CRL). Attempts to configure this
   will fail.
-- Inspecting peer certificate subject or issuer name.
-  `tls_peer_cert_subject` and `tls_peer_cert_issuer` always return
-  `NULL`.
+- Inspecting peer certificate issuer name. `tls_peer_cert_issuer`
+  always returns `NULL`.
 - Inspecting peer certificate notBefore and notAfter times.
   `tls_peer_cert_notbefore` and `tls_peer_cert_notafter` always
   return `-1`.
