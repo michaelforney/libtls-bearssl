@@ -289,6 +289,54 @@ static const struct {
 	},
 };
 
+struct suite_list {
+	uint16_t suite[LEN(suite_info)];
+	size_t len;
+	uint32_t mask;
+};
+
+static int
+suite_add(struct suite_list *list, size_t i)
+{
+	if ((list->mask & 1 << i) != 0)
+		return 0;
+	list->suite[list->len++] = suite_info[i].id;
+	list->mask |= 1 << i;
+	return 1;
+}
+
+static int
+suite_del(struct suite_list *list, size_t i)
+{
+	size_t j;
+
+	if ((list->mask & 1 << i) == 0)
+		return 0;
+	for (j = 0; j < list->len; ++j) {
+		if (list->suite[j] == suite_info[i].id) {
+			list->suite[j] = 0;
+			break;
+		}
+	}
+	list->mask &= ~(1 << i);
+	return 1;
+}
+
+static void
+suite_trim(struct suite_list *list)
+{
+	size_t i, j;
+
+	for (i = 0, j = 0; j < list->len; ++j) {
+		if (list->suite[j] == 0)
+			continue;
+		if (i < j)
+			list->suite[i] = list->suite[j];
+		++i;
+	}
+	list->len = i;
+}
+
 int
 bearssl_parse_ciphers(const char *ciphers, uint16_t **suites, size_t *suites_len)
 {
@@ -302,6 +350,8 @@ bearssl_parse_ciphers(const char *ciphers, uint16_t **suites, size_t *suites_len
 		{"AES", AES128|AES256},
 		{"AES128", AES128},
 		{"AES256", AES256},
+		{"AESCCM", AESCCM},
+		{"AESCCM8", AESCCM8},
 		{"AESGCM", AESGCM},
 		{"ALL", ~0}, /* !eNULL */
 		{"CHACHA20", CHACHA20},
@@ -356,50 +406,88 @@ bearssl_parse_ciphers(const char *ciphers, uint16_t **suites, size_t *suites_len
 		 * STREEBOG256
 		 */
 	}, *word;
-	uint16_t res[LEN(suite_info)];
-	size_t len = 0;
-	char cur[LEN(suite_info)], use[LEN(suite_info)] = {0};
+	struct suite_list avail = {0}, unavail = {0};
+	uint32_t mask;
 	size_t i;
 	char *cs = NULL;
 	char *p, *q, *r;
+	char prefix;
 	int rv = -1;
 
 	if ((cs = strdup(ciphers)) == NULL)
 		goto err;
 
+	for (i = 0; i < LEN(suite_info); ++i)
+		suite_add(&unavail, i);
+
 	q = cs;
-next:
 	while ((p = strsep(&q, ": ;,")) != NULL) {
-		for (i = 0; i < LEN(suite_info); ++i) {
-			if (strcmp(p, suite_info[i].name) == 0) {
-				memset(cur, 0, sizeof(cur));
-				cur[i] = 1;
-				goto add;
-			}
+		if (strcmp(p, "@STRENGTH") == 0)  /* not yet supported */
+			goto err;
+		if (p[0] == '!' || p[0] == '-' || p[0] == '+') {
+			prefix = p[0];
+			++p;
+		} else {
+			prefix = 0;
 		}
-		if (p[0] == '!' || p[0] == '-' || p[0] == '+')
-			goto err;  /* not yet supported */
-		memset(cur, 1, sizeof(cur));
+		mask = -1;
 		while ((r = strsep(&p, "+")) != NULL) {
-			word = bsearch(r, words, LEN(words), sizeof(words[0]), wordcmp);
-			if (!word)
-				goto next;  /* ignore unknown words */
 			for (i = 0; i < LEN(suite_info); ++i) {
-				if (!(suite_info[i].prop & word->prop))
-					cur[i] = 0;
+				if (strcmp(r, suite_info[i].name) == 0) {
+					mask = 1 << i;
+					goto update;
+				}
+			}
+			word = bsearch(r, words, LEN(words), sizeof(words[0]), wordcmp);
+			if (!word) {
+				/* ignore unknown words */
+				mask = 0;
+				goto update;
+			}
+			for (i = 0; i < LEN(suite_info); ++i) {
+				if (!(suite_info[i].prop & word->prop)) {
+					mask &= ~(1 << i);
+				}
 			}
 		}
-	add:
-		for (i = 0; i < LEN(cur); ++i) {
-			if (cur[i] && !use[i])
-				res[len++] = suite_info[i].id;
+	update:
+		for (i = 0; i < LEN(suite_info); ++i) {
+			if ((mask & 1 << i) == 0)
+				continue;
+			switch (prefix) {
+			case 0:
+				/* add */
+				if (suite_del(&unavail, i))
+					suite_add(&avail, i);
+				break;
+			case '+':
+				/* reduce priority */
+				if (suite_del(&avail, i))
+					suite_add(&avail, i);
+				break;
+			case '-':
+				/* delete */
+				if (suite_del(&avail, i))
+					suite_add(&unavail, i);
+				break;
+			case '!':
+				/* permanently delete */
+				suite_del(&avail, i);
+				suite_del(&unavail, i);
+				break;
+			}
 		}
+		suite_trim(&avail);
+		suite_trim(&unavail);
 	}
 
-	if ((*suites = reallocarray(NULL, len, sizeof(res[0]))) == NULL)
+	if (avail.len == 0)
 		goto err;
-	memcpy(*suites, res, len * sizeof(res[0]));
-	*suites_len = len;
+
+	if ((*suites = reallocarray(NULL, avail.len, sizeof(avail.suite[0]))) == NULL)
+		goto err;
+	memcpy(*suites, avail.suite, avail.len * sizeof(avail.suite[0]));
+	*suites_len = avail.len;
 
 	rv = 0;
 
