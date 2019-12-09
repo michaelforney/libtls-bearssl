@@ -669,7 +669,7 @@ tls_run_until(struct tls *ctx, unsigned target, const char *prefix)
 		br_ssl_engine_flush(eng, 0);
 	}
 
-	rv = 0;
+	rv = 1;
 
  err:
 	return rv;
@@ -699,7 +699,7 @@ tls_handshake(struct tls *ctx)
 
 	ctx->state |= TLS_SSL_NEEDS_SHUTDOWN;
 
-	if ((rv = tls_run_until(ctx, BR_SSL_SENDAPP | BR_SSL_RECVAPP, "handshake")) != 0)
+	if ((rv = tls_run_until(ctx, BR_SSL_SENDAPP | BR_SSL_RECVAPP, "handshake")) <= 0)
 		goto out;
 
 	ctx->state |= TLS_HANDSHAKE_COMPLETE;
@@ -728,7 +728,7 @@ tls_read(struct tls *ctx, void *buf, size_t buflen)
 			goto out;
 	}
 
-	if ((rv = tls_run_until(ctx, BR_SSL_RECVAPP, "read")) != 0)
+	if ((rv = tls_run_until(ctx, BR_SSL_RECVAPP, "read")) <= 0)
 		goto out;
 
 	app = br_ssl_engine_recvapp_buf(eng, &applen);
@@ -760,7 +760,7 @@ tls_write(struct tls *ctx, const void *buf, size_t buflen)
 			goto out;
 	}
 
-	if ((rv = tls_run_until(ctx, BR_SSL_SENDAPP, "write")) != 0)
+	if ((rv = tls_run_until(ctx, BR_SSL_SENDAPP, "write")) <= 0)
 		goto out;
 
 	app = br_ssl_engine_sendapp_buf(eng, &applen);
@@ -772,7 +772,7 @@ tls_write(struct tls *ctx, const void *buf, size_t buflen)
 
 	/* XXX: what should we return if we buffer a record, but
 	 * are unable to send it without blocking? */
-	if ((rv = tls_run_until(ctx, BR_SSL_SENDAPP, "write")) != 0 &&
+	if ((rv = tls_run_until(ctx, BR_SSL_SENDAPP, "write")) <= 0 &&
 	    rv != TLS_WANT_POLLOUT) {
 		goto out;
 	}
@@ -801,18 +801,17 @@ tls_close(struct tls *ctx)
 	}
 
 	if (ctx->state & TLS_SSL_NEEDS_SHUTDOWN) {
-		if (!(ctx->state & TLS_SSL_IN_SHUTDOWN)) {
-			br_ssl_engine_close(eng);
-			ctx->state |= TLS_SSL_IN_SHUTDOWN;
-		}
-		while (br_ssl_engine_current_state(eng) != BR_SSL_CLOSED) {
-			if ((rv = tls_run_until(ctx, BR_SSL_RECVAPP, "shutdown")) != 0)
-				goto out;
-			/* discard incoming application data */
-			br_ssl_engine_recvapp_buf(eng, &len);
-			br_ssl_engine_recvapp_ack(eng, len);
-		}
+		br_ssl_engine_close(eng);
 		ctx->state &= ~TLS_SSL_NEEDS_SHUTDOWN;
+	}
+
+	while (br_ssl_engine_current_state(eng) != BR_SSL_CLOSED) {
+		rv = tls_run_until(ctx, BR_SSL_RECVAPP, "shutdown");
+		if (rv == TLS_WANT_POLLIN || rv == TLS_WANT_POLLOUT)
+			goto out;
+		/* discard incoming application data */
+		br_ssl_engine_recvapp_buf(eng, &len);
+		br_ssl_engine_recvapp_ack(eng, len);
 	}
 
 	if (ctx->socket != -1) {

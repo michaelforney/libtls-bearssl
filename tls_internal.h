@@ -114,7 +114,6 @@ struct tls_conninfo {
 #define TLS_CONNECTED		(1 << 1)
 #define TLS_HANDSHAKE_COMPLETE	(1 << 2)
 #define TLS_SSL_NEEDS_SHUTDOWN	(1 << 3)
-#define TLS_SSL_IN_SHUTDOWN	(1 << 4)
 
 enum {
 	TLS_DN_C,
