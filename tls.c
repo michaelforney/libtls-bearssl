@@ -704,8 +704,12 @@ tls_handshake(struct tls *ctx)
 
 	ctx->state |= TLS_HANDSHAKE_COMPLETE;
 
-	if (tls_conninfo_populate(ctx) == -1)
+	if (tls_conninfo_populate(ctx) == -1) {
 		rv = -1;
+		goto out;
+	}
+
+	rv = 0;
 
  out:
 	/* Prevent callers from performing incorrect error handling */
