@@ -764,26 +764,27 @@ tls_write(struct tls *ctx, const void *buf, size_t buflen)
 			goto out;
 	}
 
-	if ((rv = tls_run_until(ctx, BR_SSL_SENDAPP, "write")) == 0) {
-		tls_set_errorx(ctx, "EOF during write");
-		rv = -1;
+	for (;;) {
+		if ((rv = tls_run_until(ctx, BR_SSL_SENDAPP, "write")) == 0) {
+			tls_set_errorx(ctx, "EOF during write");
+			rv = -1;
+		}
+		if (rv != 1)
+			goto out;
+		if (ctx->conn->write_len > 0)
+			break;
+
+		app = br_ssl_engine_sendapp_buf(eng, &applen);
+		if (applen > buflen)
+			applen = buflen;
+		memcpy(app, buf, applen);
+		br_ssl_engine_sendapp_ack(eng, applen);
+		br_ssl_engine_flush(eng, 0);
+		ctx->conn->write_len = applen;
 	}
-	if (rv != 1)
-		goto out;
 
-	app = br_ssl_engine_sendapp_buf(eng, &applen);
-	if (applen > buflen)
-		applen = buflen;
-	memcpy(app, buf, applen);
-	br_ssl_engine_sendapp_ack(eng, applen);
-	br_ssl_engine_flush(eng, 0);
-
-	/* XXX: what should we return if we buffer a record, but
-	 * are unable to send it without blocking? */
-	if ((rv = tls_run_until(ctx, BR_SSL_SENDAPP, "write")) == -1)
-		goto out;
-
-	rv = (ssize_t)applen;
+	rv = ctx->conn->write_len;
+	ctx->conn->write_len = 0;
 
  out:
 	/* Prevent callers from performing incorrect error handling */

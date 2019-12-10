@@ -154,6 +154,7 @@ struct tls_conn {
 	const br_ssl_server_policy_class *policy;
 	struct tls_x509 *x509;
 	char buf[BR_SSL_BUFSIZE_BIDI];
+	size_t write_len;
 };
 
 struct tls {
