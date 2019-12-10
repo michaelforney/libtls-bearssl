@@ -596,29 +596,6 @@ tls_reset(struct tls *ctx)
 	ctx->cb_arg = NULL;
 }
 
-int
-tls_ssl_error(struct tls *ctx, br_ssl_engine_context *eng, ssize_t ret, const char *prefix)
-{
-	const char *errstr = "unknown error";
-	int err;
-
-	if (ret == TLS_WANT_POLLIN || ret == TLS_WANT_POLLOUT)
-		return ret;
-	if ((err = br_ssl_engine_last_error(eng)) != 0) {
-		errstr = bearssl_strerror(err);
-	} else if (ret == 0) {
-		if ((ctx->state & TLS_HANDSHAKE_COMPLETE) != 0) {
-			ctx->state |= TLS_EOF_NO_CLOSE_NOTIFY;
-			return (0);
-		}
-		errstr = "unexpected EOF";
-	} else if (ret == -1) {
-		errstr = strerror(errno);
-	}
-	tls_set_ssl_errorx(ctx, "%s failed: %s", prefix, errstr);
-	return (-1);
-}
-
 static int
 tls_run_until(struct tls *ctx, unsigned target, const char *prefix)
 {
@@ -633,7 +610,7 @@ tls_run_until(struct tls *ctx, unsigned target, const char *prefix)
 		state = br_ssl_engine_current_state(eng);
 		if (state & BR_SSL_CLOSED) {
 			if ((err = br_ssl_engine_last_error(eng)) != 0)
-				tls_set_errorx(ctx, "%s (%d)", bearssl_strerror(err), err);
+				tls_set_ssl_errorx(ctx, "%s (%d)", bearssl_strerror(err), err);
 			else
 				rv = 0;
 			goto out;
@@ -641,8 +618,10 @@ tls_run_until(struct tls *ctx, unsigned target, const char *prefix)
 		if (state & BR_SSL_SENDREC) {
 			buf = br_ssl_engine_sendrec_buf(eng, &len);
 			ret = (ctx->write_cb)(ctx, buf, len, ctx->cb_arg);
-			if (ret <= 0) {
-				rv = tls_ssl_error(ctx, eng, ret, prefix);
+			if (ret == -1)
+				tls_set_error(ctx, "%s failed", prefix);
+			if (ret < 0) {
+				rv = ret;
 				goto out;
 			}
 			br_ssl_engine_sendrec_ack(eng, ret);
@@ -659,8 +638,19 @@ tls_run_until(struct tls *ctx, unsigned target, const char *prefix)
 		if (state & BR_SSL_RECVREC) {
 			buf = br_ssl_engine_recvrec_buf(eng, &len);
 			ret = (ctx->read_cb)(ctx, buf, len, ctx->cb_arg);
-			if (ret <= 0) {
-				rv = tls_ssl_error(ctx, eng, ret, prefix);
+			if (ret == 0) {
+				if ((ctx->state & TLS_HANDSHAKE_COMPLETE) != 0) {
+					ctx->state |= TLS_EOF_NO_CLOSE_NOTIFY;
+					rv = 0;
+				} else {
+					tls_set_errorx(ctx, "unexpected EOF");
+				}
+				goto out;
+			}
+			if (ret == -1)
+				tls_set_error(ctx, "%s failed", prefix);
+			if (ret < 0) {
+				rv = ret;
 				goto out;
 			}
 			br_ssl_engine_recvrec_ack(eng, ret);
@@ -766,7 +756,7 @@ tls_write(struct tls *ctx, const void *buf, size_t buflen)
 
 	for (;;) {
 		if ((rv = tls_run_until(ctx, BR_SSL_SENDAPP, "write")) == 0) {
-			tls_set_errorx(ctx, "EOF during write");
+			tls_set_ssl_errorx(ctx, "connection closed");
 			rv = -1;
 		}
 		if (rv != 1)
