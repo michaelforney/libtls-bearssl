@@ -147,7 +147,7 @@ tls_keypair_set_cert_mem(struct tls_keypair *keypair, struct tls_error *error,
 	chain = NULL;
 
 	rv = 0;
-	
+
  err:
 	free(chain);
 	free(ctx.buf);
