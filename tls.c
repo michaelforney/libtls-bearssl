@@ -596,6 +596,19 @@ tls_reset(struct tls *ctx)
 	ctx->cb_arg = NULL;
 }
 
+/*
+ * Run the TLS engine until the target state is reached, or an error
+ * occurs.
+ *
+ * Return value:
+ *    1  The desired state was reached.
+ *    0  The engine was closed without error, or the read callback
+ *       returned 0 and the handshake was completed.
+ *   -1  The engine encountered an error, or the read or write
+ *       callback returned -1, or the write callback returned 0.
+ *   <0  The read or write callback returned some other negative
+ *       value (for instance, TLS_WANT_POLLIN or TLS_WANT_POLLOUT).
+ */
 static int
 tls_run_until(struct tls *ctx, unsigned target, const char *prefix)
 {
@@ -618,6 +631,8 @@ tls_run_until(struct tls *ctx, unsigned target, const char *prefix)
 		if (state & BR_SSL_SENDREC) {
 			buf = br_ssl_engine_sendrec_buf(eng, &len);
 			ret = (ctx->write_cb)(ctx, buf, len, ctx->cb_arg);
+			if (ret == 0)
+				ret = -1;
 			if (ret == -1)
 				tls_set_error(ctx, "%s failed", prefix);
 			if (ret < 0) {
