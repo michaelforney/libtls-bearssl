@@ -145,6 +145,8 @@ struct tls_x509 {
 	br_x509_minimal_context minimal;
 	int depth;
 
+	time_t notbefore;
+	time_t notafter;
 	struct {
 		char C[3];
 		char ST[129];

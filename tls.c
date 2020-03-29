@@ -300,6 +300,8 @@ x509_start_chain(const br_x509_class **vtable, const char *server_name)
 	if (!x509->ctx->config->verify_name)
 		server_name = NULL;
 	x509->depth = 0;
+	x509->notbefore = -1;
+	x509->notafter = -1;
 	x509->minimal.vtable->start_chain(&x509->minimal.vtable, server_name);
 }
 
@@ -474,10 +476,29 @@ tls_conn_new(struct tls *ctx)
 }
 
 #if BR_FEATURE_X509_TIME_CALLBACK
-int
-tls_noverifytime(void *ctx, uint32_t nbd, uint32_t nbs, uint32_t nad, uint32_t nas)
+static int
+tls_time_cb(void *aux, uint32_t nbd, uint32_t nbs, uint32_t nad, uint32_t nas)
 {
-       return (0);
+	struct tls_x509 *x509 = aux;
+	struct tls *ctx = x509->ctx;
+	time_t now;
+	uint32_t nowdays, nowsecs;
+
+	if (x509->depth == 1) {
+		/* Save validity period for tls_conninfo. */
+		x509->notbefore = 86400LL * (nbd - 719528) + nbs;
+		x509->notafter = 86400LL * (nad - 719528) + nas;
+	}
+	if (ctx->config->verify_time != 0) {
+		now = time(NULL);
+		nowdays = (uint32_t)(now / 86400) + 719528;
+		nowsecs = (uint32_t)(now % 86400);
+		if (nowdays < nbd || (nowdays == nbd && nowsecs < nbs))
+			return -1;
+		if (nowdays > nad || (nowdays == nad && nowsecs > nas))
+			return 1;
+	}
+	return 0;
 }
 #endif
 
@@ -500,6 +521,8 @@ tls_configure_x509(struct tls *ctx)
 
 	x509->ctx = ctx;
 	x509->vtable = &x509_vtable;
+	x509->notbefore = -1;
+	x509->notafter = -1;
 	x509->subject_elts[TLS_DN_C] = (br_name_element){
 		/* 2.5.4.6,  id-at-countryName */
 		.oid = (unsigned char *)"\x03\x55\x04\x06",
@@ -541,10 +564,8 @@ tls_configure_x509(struct tls *ctx)
 	br_x509_minimal_set_name_elements(&x509->minimal,
 	    x509->subject_elts, TLS_DN_NUM_ELTS);
 #if BR_FEATURE_X509_TIME_CALLBACK
-	if (ctx->config->verify_time == 0) {
-		br_x509_minimal_set_time_callback(&x509->minimal, NULL,
-		    tls_noverifytime);
-	}
+	br_x509_minimal_set_time_callback(&x509->minimal, x509,
+	    tls_time_cb);
 #endif
 	br_ssl_engine_set_x509(&ctx->conn->u.engine, &x509->vtable);
 

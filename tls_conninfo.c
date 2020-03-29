@@ -200,10 +200,11 @@ static int
 tls_get_peer_cert_times(struct tls *ctx, time_t *notbefore,
     time_t *notafter)
 {
-	/* XXX: BearSSL has no way to get certificate notBefore and
-	 * notAfter */
-	*notbefore = -1;
-	*notafter = -1;
+	if (ctx->conn == NULL || ctx->conn->x509 == NULL)
+		return (-1);
+
+	*notbefore = ctx->conn->x509->notbefore;
+	*notafter = ctx->conn->x509->notafter;
 
 	return (0);
 }
