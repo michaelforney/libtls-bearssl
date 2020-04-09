@@ -1,4 +1,4 @@
-/* $OpenBSD: tls.c,v 1.83 2019/04/01 15:58:02 jsing Exp $ */
+/* $OpenBSD: tls.c,v 1.84 2020/01/20 08:39:21 jsing Exp $ */
 /*
  * Copyright (c) 2014 Joel Sing <jsing@openbsd.org>
  *
@@ -415,6 +415,7 @@ tls_conn_new(struct tls *ctx)
 		version_max = BR_TLS11;
 		break;
 	case TLS_PROTOCOL_TLSv1_0|TLS_PROTOCOL_TLSv1_1|TLS_PROTOCOL_TLSv1_2:
+	case TLS_PROTOCOL_TLSv1_0|TLS_PROTOCOL_TLSv1_1|TLS_PROTOCOL_TLSv1_2|TLS_PROTOCOL_TLSv1_3:
 		version_min = BR_TLS10;
 		version_max = BR_TLS12;
 		break;
@@ -423,10 +424,12 @@ tls_conn_new(struct tls *ctx)
 		version_max = BR_TLS11;
 		break;
 	case TLS_PROTOCOL_TLSv1_1|TLS_PROTOCOL_TLSv1_2:
+	case TLS_PROTOCOL_TLSv1_1|TLS_PROTOCOL_TLSv1_2|TLS_PROTOCOL_TLSv1_3:
 		version_min = BR_TLS11;
 		version_max = BR_TLS12;
 		break;
 	case TLS_PROTOCOL_TLSv1_2:
+	case TLS_PROTOCOL_TLSv1_2|TLS_PROTOCOL_TLSv1_3:
 		version_min = BR_TLS12;
 		version_max = BR_TLS12;
 		break;

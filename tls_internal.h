@@ -1,4 +1,4 @@
-/* $OpenBSD: tls_internal.h,v 1.74 2019/04/01 15:58:02 jsing Exp $ */
+/* $OpenBSD: tls_internal.h,v 1.77 2019/11/16 21:39:52 beck Exp $ */
 /*
  * Copyright (c) 2014 Jeremie Courreges-Anglas <jca@openbsd.org>
  * Copyright (c) 2014 Joel Sing <jsing@openbsd.org>
@@ -28,7 +28,11 @@
 
 #include "compat.h"
 
-#define TLS_CIPHERS_DEFAULT	"TLSv1.2+AEAD+ECDHE:TLSv1.2+AEAD+DHE"
+#ifndef TLS_DEFAULT_CA_FILE
+#define TLS_DEFAULT_CA_FILE 	"/etc/ssl/cert.pem"
+#endif
+
+#define TLS_CIPHERS_DEFAULT	"TLSv1.3:TLSv1.2+AEAD+ECDHE:TLSv1.2+AEAD+DHE"
 #define TLS_CIPHERS_COMPAT	"HIGH:!aNULL"
 #define TLS_CIPHERS_LEGACY	"HIGH:MEDIUM:!aNULL"
 #define TLS_CIPHERS_ALL		"ALL:!aNULL:!eNULL"
@@ -92,6 +96,7 @@ struct tls_config {
 struct tls_conninfo {
 	char *alpn;
 	char *cipher;
+	int cipher_strength;
 	char *servername;
 	char *version;
 
@@ -192,6 +197,7 @@ int bearssl_parse_ciphers(const char *ciphers, uint16_t **suites,
 int bearssl_load_ca(struct tls_error *error, const uint8_t *mem, size_t len,
     br_x509_trust_anchor **ca, size_t *ca_len);
 const char *bearssl_suite_name(uint16_t suite_id);
+int bearssl_suite_bits(uint16_t suite_id);
 
 struct tls_keypair *tls_keypair_new(void);
 void tls_keypair_clear_key(struct tls_keypair *_keypair);
