@@ -3,7 +3,7 @@
 
 -include config.mk
 
-VERSION=0.1
+VERSION=0.2
 PREFIX?=/usr/local
 INCDIR?=$(PREFIX)/include
 LIBDIR?=$(PREFIX)/lib
