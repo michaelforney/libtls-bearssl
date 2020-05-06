@@ -1,0 +1,9 @@
+libdir=@libdir@
+includedir=@includedir@
+
+Name: libtls-bearssl
+Description: Secure communications using the TLS socket protocol.
+Version: @version@
+Libs: -L${libdir} -ltls
+Libs.private: -lbearssl
+Cflags: -I${includedir}

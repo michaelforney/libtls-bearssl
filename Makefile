@@ -3,6 +3,7 @@
 
 -include config.mk
 
+VERSION=0.1
 PREFIX?=/usr/local
 INCDIR?=$(PREFIX)/include
 LIBDIR?=$(PREFIX)/lib
@@ -50,11 +51,18 @@ $(OBJ): tls.h tls_internal.h compat.h
 libtls.a: $(OBJ)
 	$(AR) cr $@ $(OBJ)
 
-install: libtls.a tls.h $(MAN)
+libtls.pc: libtls.pc.in
+	sed -e "s,@version@,$(VERSION),"\
+	    -e "s,@libdir@,$(LIBDIR),"\
+	    -e "s,@includedir@,$(INCDIR),"\
+	    libtls.pc.in >$@.tmp && mv $@.tmp $@
+
+install: tls.h libtls.a libtls.pc $(MAN)
 	mkdir -p $(DESTDIR)$(INCDIR)
 	cp tls.h $(DESTDIR)$(INCDIR)/
-	mkdir -p $(DESTDIR)$(LIBDIR)
+	mkdir -p $(DESTDIR)$(LIBDIR)/pkgconfig/
 	cp libtls.a $(DESTDIR)$(LIBDIR)/
+	cp libtls.pc $(DESTDIR)$(LIBDIR)/pkgconfig/
 	mkdir -p $(DESTDIR)$(MANDIR)/man3
 	cp $(MAN) $(DESTDIR)$(MANDIR)/man3/
 
