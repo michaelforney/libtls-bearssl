@@ -67,4 +67,4 @@ install: tls.h libtls.a libtls.pc $(MAN)
 	cp $(MAN) $(DESTDIR)$(MANDIR)/man3/
 
 clean:
-	rm -f libtls.a $(OBJ)
+	rm -f libtls.a libtls.pc $(OBJ)
