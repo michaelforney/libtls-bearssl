@@ -8,7 +8,7 @@ PREFIX?=/usr/local
 INCDIR?=$(PREFIX)/include
 LIBDIR?=$(PREFIX)/lib
 MANDIR?=$(PREFIX)/share/man
-CFLAGS+=-Wall -Wpedantic -D _DEFAULT_SOURCE -I .
+CFLAGS+=-Wall -Wpedantic -D _GNU_SOURCE -I .
 
 OBJ=\
 	tls.o\
