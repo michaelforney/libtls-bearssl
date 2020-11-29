@@ -113,6 +113,8 @@ policy_choose(const br_ssl_server_policy_class **vtable,
 	}
 
 	for (kp = ctx->config->keypair; kp != NULL; kp = kp->next) {
+		if (kp->chain_len == 0)
+			continue;
 		if (tls_check_name(ctx, &kp->chain[0], name, &match) == -1)
 			return 0;
 		if (match)
