@@ -141,6 +141,10 @@ tls_keypair_set_cert_mem(struct tls_keypair *keypair, struct tls_error *error,
 			goto err;
 		}
 	}
+	if (chain_len == 0) {
+		tls_error_setx(error, "empty certificate chain");
+		goto err;
+	}
 
 	keypair->chain = chain;
 	keypair->chain_len = chain_len;
