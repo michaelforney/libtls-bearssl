@@ -224,6 +224,7 @@ tls_new(void)
 int
 tls_configure(struct tls *ctx, struct tls_config *config)
 {
+	struct tls_keypair *kp;
 	int rv = -1;
 
 	if (config == NULL)
@@ -238,8 +239,10 @@ tls_configure(struct tls *ctx, struct tls_config *config)
 	ctx->config = config;
 	ctx->keypair = config->keypair;
 
-	if (tls_keypair_check(ctx->keypair, &ctx->error) != 0)
-		goto err;
+	for (kp = ctx->keypair; kp; kp = kp->next) {
+		if (tls_keypair_check(kp, &ctx->error) != 0)
+			goto err;
+	}
 
 	rv = 0;
 
