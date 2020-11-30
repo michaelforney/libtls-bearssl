@@ -24,7 +24,7 @@ the libtls API on top of BearSSL.
 ## Status
 
 libtls-bearssl implements nearly all features of the libtls API
-(version 3.0.2).  However, there are some that are missing, since
+(version 3.3.0).  However, there are some that are missing, since
 they are not supported by BearSSL.
 
 - OCSP stapling. Attempts to configure this will fail.
