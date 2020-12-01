@@ -1,5 +1,9 @@
 #include <stddef.h>
 
+#ifndef HAVE_EXPLICIT_BZERO
+void explicit_bzero(void *, size_t);
+#endif
+
 #ifndef HAVE_FREEZERO
 void freezero(void *, size_t);
 #endif

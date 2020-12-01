@@ -29,6 +29,7 @@ OBJ=\
 	tls_util.o\
 	tls_verify.o\
 	bearssl.o\
+	compat/explicit_bzero.o\
 	compat/freezero.o\
 	compat/reallocarray.o\
 	compat/timingsafe_memcmp.o
