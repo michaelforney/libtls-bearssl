@@ -1,14 +1,20 @@
 .POSIX:
-.PHONY: all clean
+.PHONY: all install install-static install-shared clean
+.SUFFIXES: .c .o .lo
 
 -include config.mk
+
+include shlib_version
 
 VERSION=0.2
 PREFIX?=/usr/local
 INCDIR?=$(PREFIX)/include
 LIBDIR?=$(PREFIX)/lib
 MANDIR?=$(PREFIX)/share/man
+LDLIBS?=-l bearssl
 CFLAGS+=-Wall -Wpedantic -D _GNU_SOURCE -I .
+CFLAGS_SHARED?=-fPIC
+LDFLAGS_SHARED?=-shared -Wl,-soname,libtls.so.$(major) -Wl,--version-script=libtls.ver -Wl,--no-undefined
 
 OBJ=\
 	tls.o\
@@ -26,6 +32,7 @@ OBJ=\
 	compat/freezero.o\
 	compat/reallocarray.o\
 	compat/timingsafe_memcmp.o
+LOBJ=$(OBJ:%.o=%.lo)
 
 MAN=\
 	man/tls_accept_socket.3\
@@ -41,15 +48,24 @@ MAN=\
 	man/tls_ocsp_process_response.3\
 	man/tls_read.3
 
-all: libtls.a
+all: libtls.a libtls.so
 
 $(OBJ): tls.h tls_internal.h compat.h
 
 .c.o:
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+.c.lo:
+	$(CC) $(CFLAGS) $(CFLAGS_SHARED) -c -o $@ $<
+
 libtls.a: $(OBJ)
 	$(AR) cr $@ $(OBJ)
+
+libtls.ver: version-script.sed Symbols.list
+	sed -f version-script.sed Symbols.list >$@.tmp && mv $@.tmp $@
+
+libtls.so: $(LOBJ) libtls.ver
+	$(CC) $(LDFLAGS) $(LDFLAGS_SHARED) -o $@ $(LOBJ) $(LDLIBS)
 
 libtls.pc: libtls.pc.in
 	sed -e "s,@version@,$(VERSION),"\
@@ -57,14 +73,23 @@ libtls.pc: libtls.pc.in
 	    -e "s,@includedir@,$(INCDIR),"\
 	    libtls.pc.in >$@.tmp && mv $@.tmp $@
 
-install: tls.h libtls.a libtls.pc $(MAN)
+install-static: libtls.a
+	mkdir -p $(DESTDIR)$(LIBDIR)/
+	cp libtls.a $(DESTDIR)$(LIBDIR)/
+
+install-shared: libtls.so
+	mkdir -p $(DESTDIR)$(LIBDIR)/
+	cp libtls.so $(DESTDIR)$(LIBDIR)/libtls.so.$(major).$(minor)
+	ln -sf libtls.so.$(major).$(minor) $(DESTDIR)$(LIBDIR)/libtls.so
+	ln -sf libtls.so.$(major).$(minor) $(DESTDIR)$(LIBDIR)/libtls.so.$(major)
+
+install: tls.h libtls.a libtls.pc $(MAN) install-static install-shared
 	mkdir -p $(DESTDIR)$(INCDIR)
 	cp tls.h $(DESTDIR)$(INCDIR)/
 	mkdir -p $(DESTDIR)$(LIBDIR)/pkgconfig/
-	cp libtls.a $(DESTDIR)$(LIBDIR)/
 	cp libtls.pc $(DESTDIR)$(LIBDIR)/pkgconfig/
 	mkdir -p $(DESTDIR)$(MANDIR)/man3
 	cp $(MAN) $(DESTDIR)$(MANDIR)/man3/
 
 clean:
-	rm -f libtls.a libtls.pc $(OBJ)
+	rm -f libtls.a libtls.pc libtls.so libtls.ver $(OBJ) $(LOBJ)

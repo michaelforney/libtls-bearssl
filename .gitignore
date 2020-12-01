@@ -1,3 +1,6 @@
 /libtls.a
 /libtls.pc
+/libtls.so
+/libtls.ver
 *.o
+*.lo
