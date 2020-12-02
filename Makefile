@@ -14,7 +14,7 @@ MANDIR?=$(PREFIX)/share/man
 LDLIBS?=-l bearssl -l pthread
 CFLAGS+=-Wall -Wpedantic -D _GNU_SOURCE -I .
 CFLAGS_SHARED?=-fPIC
-LDFLAGS_SHARED?=-shared -Wl,-soname,libtls.so.$(major) -Wl,--version-script=libtls.ver -Wl,--no-undefined
+LDFLAGS_SHARED?=-shared -Wl,-soname,libtls.so.$(major) -Wl,--version-script=libtls.ver
 
 OBJ=\
 	tls.o\
