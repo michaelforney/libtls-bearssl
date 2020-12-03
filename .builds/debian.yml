@@ -4,5 +4,5 @@ sources:
 - https://www.bearssl.org/git/BearSSL#v0.6
 tasks:
 - build: |
-    make -C bearssl
+    make -C BearSSL
     CFLAGS="-I $PWD/BearSSL/inc" LDFLAGS="-L $PWD/BearSSL/build" make -C libtls-bearssl
