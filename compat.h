@@ -1,7 +1,7 @@
 #include <stddef.h>
 
 #ifndef HAVE_EXPLICIT_BZERO
-void explicit_bzero(void *s, size_t len);
+void explicit_bzero(void *, size_t);
 #endif
 
 #ifndef HAVE_FREEZERO
