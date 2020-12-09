@@ -21,8 +21,13 @@
 
 #include <pthread.h>
 
-#include <arpa/inet.h>
-#include <netinet/in.h>
+#ifdef WIN32
+# include <Winsock2.h>
+# include <in6addr.h>
+#else
+# include <netinet/in.h>
+# include <arpa/inet.h>
+#endif
 
 #include <bearssl.h>
 

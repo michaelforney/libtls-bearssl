@@ -22,6 +22,10 @@
 #include <tls.h>
 #include "tls_internal.h"
 
+#ifdef WIN32
+# include <time.h>
+#endif
+
 int ASN1_time_tm_clamp_notafter(struct tm *tm);
 
 int

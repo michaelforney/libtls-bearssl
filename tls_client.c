@@ -16,16 +16,20 @@
  */
 
 #include <sys/types.h>
-#include <sys/socket.h>
+#ifdef WIN32
+# include <Winsock2.h>
+# include <ws2tcpip.h>
+#else
+# include <sys/socket.h>
+# include <arpa/inet.h>
+# include <netinet/in.h>
+# include <netdb.h>
+#endif
 #include <sys/stat.h>
-
-#include <arpa/inet.h>
-#include <netinet/in.h>
 
 #include <assert.h>
 #include <errno.h>
 #include <limits.h>
-#include <netdb.h>
 #include <stdlib.h>
 #include <unistd.h>
 
