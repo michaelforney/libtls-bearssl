@@ -39,6 +39,9 @@ they are not supported by BearSSL.
   string, it will return `NULL`.
 - Session caching. BearSSL does implement this (though not session
   tickets, RFC 5077), so this may be added in the future.
+- Keys and certificates using CRLF as the line ending are not
+  supported. They must first be converted to use unix-style line
+  endings (LF).
 
 ## Mailing list
 
