@@ -107,11 +107,13 @@ policy_choose(const br_ssl_server_policy_class **vtable,
 	 * (Python, Ruby and Safari) are not RFC compliant. To avoid handshake
 	 * failures, pretend that we did not receive the extension.
 	 */
-	if (inet_pton(AF_INET, name, &addrbuf) == 1 ||
+	if (name[0] == '\0' ||
+	    inet_pton(AF_INET, name, &addrbuf) == 1 ||
 	    inet_pton(AF_INET6, name, &addrbuf) == 1) {
 		name = NULL;
 	}
 
+	/* Find appropriate keypair for requested servername. */
 	for (kp = ctx->config->keypair; kp != NULL; kp = kp->next) {
 		if (kp->chain_len == 0)
 			continue;
