@@ -111,6 +111,8 @@ policy_choose(const br_ssl_server_policy_class **vtable,
 	    inet_pton(AF_INET, name, &addrbuf) == 1 ||
 	    inet_pton(AF_INET6, name, &addrbuf) == 1) {
 		name = NULL;
+	} else if ((ctx->servername = strdup(name)) == NULL) {
+		return 0;
 	}
 
 	/* Find appropriate keypair for requested servername. */
