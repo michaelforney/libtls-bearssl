@@ -19,6 +19,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include "compat.h"
 
 void
 freezero(void *ptr, size_t sz)

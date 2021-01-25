@@ -15,9 +15,13 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include <sys/socket.h>
-
-#include <arpa/inet.h>
+#ifdef WIN32
+# include <Winsock2.h>
+# include <ws2tcpip.h>
+#else
+# include <sys/socket.h>
+# include <arpa/inet.h>
+#endif
 
 #include <errno.h>
 #include <stdlib.h>

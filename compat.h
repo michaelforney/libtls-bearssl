@@ -15,3 +15,11 @@ void *reallocarray(void *, size_t, size_t);
 #ifndef HAVE_TIMINGSAFE_MEMCMP
 int timingsafe_memcmp(const void *, const void *, size_t);
 #endif
+
+#ifndef HAVE_STRSEP
+char *strsep(char **sp, char *sep);
+#endif
+
+#ifndef HAVE_STPCPY
+char* stpcpy(char *dst, const char *src);
+#endif
