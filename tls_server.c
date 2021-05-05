@@ -340,7 +340,7 @@ tls_accept_common(struct tls *ctx)
 			goto err;
 
 		if (ctx->config->ca_len == 0) {
-			tls_set_error(ctx, "cannot verify client without trust anchors");
+			tls_set_errorx(ctx, "cannot verify client without trust anchors");
 			goto err;
 		}
 

@@ -656,7 +656,7 @@ tls_run_until(struct tls *ctx, unsigned target, unsigned finish, const char *pre
 		if (state & BR_SSL_RECVAPP) {
 			/* we use a bidirectional buffer, so this
 			 * should never happen */
-			tls_set_error(ctx, "unexpected I/O state");
+			tls_set_errorx(ctx, "unexpected I/O state");
 			goto out;
 		}
 		if (state & BR_SSL_RECVREC) {

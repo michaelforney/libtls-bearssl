@@ -703,7 +703,7 @@ tls_config_set_protocols(struct tls_config *config, uint32_t protocols)
 int
 tls_config_set_session_fd(struct tls_config *config, int session_fd)
 {
-	tls_config_set_error(config, "sessions are not supported");
+	tls_config_set_errorx(config, "sessions are not supported");
 
 	return (-1);
 }

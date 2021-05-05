@@ -115,7 +115,7 @@ tls_connect_servername(struct tls *ctx, const char *host, const char *port,
 			hints.ai_family = AF_UNSPEC;
 			hints.ai_flags = AI_ADDRCONFIG;
 			if ((s = getaddrinfo(h, p, &hints, &res0)) != 0) {
-				tls_set_error(ctx, "%s", gai_strerror(s));
+				tls_set_errorx(ctx, "%s", gai_strerror(s));
 				goto err;
 			}
 		}
