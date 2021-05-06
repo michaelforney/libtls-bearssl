@@ -22,8 +22,6 @@
 #include <tls.h>
 #include "tls_internal.h"
 
-int ASN1_time_tm_clamp_notafter(struct tm *tm);
-
 int
 tls_hex_string(const unsigned char *in, size_t inlen, char **out,
     size_t *outlen)
