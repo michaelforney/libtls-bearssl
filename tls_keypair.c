@@ -1,4 +1,4 @@
-/* $OpenBSD: tls_keypair.c,v 1.6 2018/04/07 16:35:34 jsing Exp $ */
+/* $OpenBSD: tls_keypair.c,v 1.8 2021/01/05 17:37:12 jsing Exp $ */
 /*
  * Copyright (c) 2014 Joel Sing <jsing@openbsd.org>
  *
