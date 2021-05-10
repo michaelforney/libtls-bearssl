@@ -222,7 +222,7 @@ tls_conninfo_cert_pem(struct tls *ctx)
 
 	free(ctx->conninfo->peer_cert);
 	ctx->conninfo->peer_cert_len = 0;
-	if ((ctx->conninfo->peer_cert = ptr = malloc(len)) == NULL)
+	if ((ctx->conninfo->peer_cert = ptr = malloc(len + 1)) == NULL)
 		goto err;
 
 	for (i = 0; i < ctx->peer_chain_len; ++i) {
