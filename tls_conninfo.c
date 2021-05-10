@@ -225,6 +225,7 @@ tls_conninfo_cert_pem(struct tls *ctx)
 	if ((ctx->conninfo->peer_cert = ptr = malloc(len + 1)) == NULL)
 		goto err;
 
+	ctx->conninfo->peer_cert_len = len;
 	for (i = 0; i < ctx->peer_chain_len; ++i) {
 		ptr += br_pem_encode(ptr, ctx->peer_chain[i].data,
 		    ctx->peer_chain[i].data_len, "X509 CERTIFICATE", 0);
