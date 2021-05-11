@@ -84,7 +84,7 @@ install-shared: libtls.so
 	ln -sf libtls.so.$(major).$(minor) $(DESTDIR)$(LIBDIR)/libtls.so
 	ln -sf libtls.so.$(major).$(minor) $(DESTDIR)$(LIBDIR)/libtls.so.$(major)
 
-install: tls.h libtls.a libtls.pc $(MAN) install-static install-shared
+install: libtls.a libtls.pc install-static install-shared
 	mkdir -p $(DESTDIR)$(INCDIR)
 	cp tls.h $(DESTDIR)$(INCDIR)/
 	mkdir -p $(DESTDIR)$(LIBDIR)/pkgconfig/
