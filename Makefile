@@ -6,7 +6,7 @@
 
 include shlib_version
 
-VERSION=0.4
+VERSION=0.5
 PREFIX?=/usr/local
 INCDIR?=$(PREFIX)/include
 LIBDIR?=$(PREFIX)/lib
