@@ -1,4 +1,4 @@
-/* $OpenBSD: tls_client.c,v 1.45 2018/03/19 16:34:47 jsing Exp $ */
+/* $OpenBSD: tls_client.c,v 1.47 2021/06/01 20:26:11 tb Exp $ */
 /*
  * Copyright (c) 2014 Joel Sing <jsing@openbsd.org>
  *
@@ -167,6 +167,7 @@ tls_connect_common(struct tls *ctx, const char *servername)
 {
 	union tls_addr addrbuf;
 	struct tls_keypair *kp;
+	size_t servername_len;
 	int rv = -1;
 
 	if ((ctx->flags & TLS_CLIENT) == 0) {
@@ -181,11 +182,24 @@ tls_connect_common(struct tls *ctx, const char *servername)
 		}
 
 		/*
-		 * RFC4366 (SNI): Literal IPv4 and IPv6 addresses are not
+		 * If there's a trailing dot, remove it. While an FQDN includes
+		 * the terminating dot representing the zero-length label of
+		 * the root (RFC 8499, section 2), the SNI explicitly does not
+		 * include it (RFC 6066, section 3).
+		 */
+		servername_len = strlen(ctx->servername);
+		if (servername_len > 0 &&
+		    ctx->servername[servername_len - 1] == '.')
+			ctx->servername[servername_len - 1] = '\0';
+
+		/*
+		 * RFC 6066 (SNI): Literal IPv4 and IPv6 addresses are not
 		 * permitted in "HostName".
 		 */
-		if (inet_pton(AF_INET, servername, &addrbuf) == 1 ||
-		    inet_pton(AF_INET6, servername, &addrbuf) == 1) {
+		if (inet_pton(AF_INET, ctx->servername, &addrbuf) != 1 &&
+		    inet_pton(AF_INET6, ctx->servername, &addrbuf) != 1) {
+			servername = ctx->servername;
+		} else {
 			servername = NULL;
 		}
 	}
