@@ -828,6 +828,8 @@ tls_close(struct tls *ctx)
 		rv = tls_run_until(ctx, -1, BR_SSL_SENDREC, "close");
 		if (rv == TLS_WANT_POLLIN || rv == TLS_WANT_POLLOUT)
 			goto out;
+		if (rv == 1)
+			rv = 0;
 		ctx->state &= ~TLS_SSL_NEEDS_SHUTDOWN;
 	}
 
