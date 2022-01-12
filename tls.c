@@ -582,10 +582,9 @@ tls_reset(struct tls *ctx)
 
 	for (i = 0; i < ctx->peer_chain_len; ++i)
 		free(ctx->peer_chain[i].data);
+	free(ctx->peer_chain);
 	ctx->peer_chain = NULL;
 	ctx->peer_chain_len = 0;
-
-	ctx->peer_chain = NULL;
 
 	ctx->socket = -1;
 	ctx->state = 0;
