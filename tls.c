@@ -484,6 +484,14 @@ tls_conn_new(struct tls *ctx)
 	return (NULL);
 }
 
+#if BR_FEATURE_X509_TIME_CALLBACK
+int
+tls_noverifytime(void *ctx, uint32_t nbd, uint32_t nbs, uint32_t nad, uint32_t nas)
+{
+       return (0);
+}
+#endif
+
 int
 tls_configure_x509(struct tls *ctx)
 {
@@ -545,6 +553,12 @@ tls_configure_x509(struct tls *ctx)
 	    ctx->config->ca_len);
 	br_x509_minimal_set_name_elements(&x509->minimal,
 	    x509->subject_elts, TLS_DN_NUM_ELTS);
+#if BR_FEATURE_X509_TIME_CALLBACK
+	if (ctx->config->verify_time == 0) {
+		br_x509_minimal_set_time_callback(&x509->minimal, NULL,
+		    tls_noverifytime);
+	}
+#endif
 	br_ssl_engine_set_x509(&ctx->conn->u.engine, &x509->vtable);
 
 	ctx->conn->x509 = x509;
