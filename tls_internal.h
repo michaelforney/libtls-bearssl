@@ -96,12 +96,6 @@ struct tls_config {
 	int verify_depth;
 	int verify_name;
 	int verify_time;
-	/* TODO: implement signer interface
-	int skip_private_key_check;
-	int use_fake_private_key;
-	tls_sign_cb sign_cb;
-	void *sign_cb_arg;
-	*/
 };
 
 struct tls_conninfo {
@@ -282,22 +276,5 @@ void tls_conninfo_free(struct tls_conninfo *conninfo);
 int tls_hex_string(const unsigned char *_in, size_t _inlen, char **_out,
     size_t *_outlen);
 int tls_cert_hash(br_x509_certificate *cert, char **hash);
-
-#define TLS_PADDING_NONE			0
-#define TLS_PADDING_RSA_PKCS1			1
-
-int tls_config_set_sign_cb(struct tls_config *_config, tls_sign_cb _cb,
-    void *_cb_arg);
-
-struct tls_signer* tls_signer_new(void);
-void tls_signer_free(struct tls_signer * _signer);
-const char *tls_signer_error(struct tls_signer * _signer);
-int tls_signer_add_keypair_file(struct tls_signer *_signer,
-    const char *_cert_file, const char *_key_file);
-int tls_signer_add_keypair_mem(struct tls_signer *_signer, const uint8_t *_cert,
-    size_t _cert_len, const uint8_t *_key, size_t _key_len);
-int tls_signer_sign(struct tls_signer *_signer, const char *_pubkey_hash,
-    const uint8_t *_input, size_t _input_len, int _padding_type,
-    uint8_t **_out_signature, size_t *_out_signature_len);
 
 #endif /* HEADER_TLS_INTERNAL_H */

@@ -42,6 +42,11 @@ they are not supported by BearSSL.
 - Keys and certificates using CRLF as the line ending are not
   supported. They must first be converted to use unix-style line
   endings (LF).
+- The signer API (currently not public) is not implemented since
+  it is not yet finalized. This shouldn't be too hard to implement
+  with BearSSL; for the client, we need to use a custom
+  br_ssl_client_certificate_class and for the server, we need to
+  extend our br_ssl_server_policy_class to use the sign callback.
 
 ## Mailing list
 

@@ -26,7 +26,6 @@ OBJ=\
 	tls_ocsp.o\
 	tls_peer.o\
 	tls_server.o\
-	tls_signer.o\
 	tls_util.o\
 	tls_verify.o\
 	bearssl.o\
