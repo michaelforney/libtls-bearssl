@@ -452,8 +452,6 @@ tls_conn_new(struct tls *ctx)
 	/* default EC implementation, possibly with some curves removed */
 	br_ssl_engine_set_ec(eng, &ctx->config->ec);
 
-	br_ssl_engine_set_hash(eng, br_md5_ID, &br_md5_vtable);
-	br_ssl_engine_set_hash(eng, br_sha1_ID, &br_sha1_vtable);
 	br_ssl_engine_set_hash(eng, br_sha224_ID, &br_sha224_vtable);
 	br_ssl_engine_set_hash(eng, br_sha256_ID, &br_sha256_vtable);
 	br_ssl_engine_set_hash(eng, br_sha384_ID, &br_sha384_vtable);

@@ -62,23 +62,17 @@ tls_server_conn(struct tls *ctx)
 }
 
 static int
-choose_algo(br_ssl_server_choices *choices, uint16_t hashes, unsigned version,
-    unsigned hash)
+choose_algo(br_ssl_server_choices *choices, uint16_t hashes)
 {
-	int rv = -1;
+	unsigned hash;
 
-	if (version >= BR_TLS12) {
-		for (hash = 6; hash >= 2; --hash) {
-			if ((hashes & 1 << hash) != 0) {
-				rv = 0;
-				break;
-			}
+	for (hash = 6; hash >= 3; --hash) {
+		if ((hashes & 1 << hash) != 0) {
+			choices->algo_id = 0xFF00 | hash;
+			return 0;
 		}
-	} else if ((hashes & 1 << hash) != 0) {
-		rv = 0;
 	}
-	choices->algo_id = 0xFF00 | hash;
-	return rv;
+	return -1;
 }
 
 static int
@@ -92,11 +86,9 @@ policy_choose(const br_ssl_server_policy_class **vtable,
 	const br_suite_translated *suites;
 	size_t suites_len, i;
 	uint32_t hashes;
-	unsigned version;
 	int match;
 
 	name = br_ssl_engine_get_server_name(&ssl_ctx->eng);
-	version = br_ssl_engine_get_version(&ssl_ctx->eng);
 	hashes = br_ssl_server_get_client_hashes(ssl_ctx);
 	suites = br_ssl_server_get_client_suites(ssl_ctx, &suites_len);
 
@@ -142,13 +134,13 @@ policy_choose(const br_ssl_server_policy_class **vtable,
 		case BR_SSLKEYX_ECDHE_RSA:
 			if (kp->key_type != BR_KEYTYPE_RSA)
 				continue;
-			if (choose_algo(choices, hashes, version, br_md5sha1_ID) != 0)
+			if (choose_algo(choices, hashes) != 0)
 				continue;
 			return 1;
 		case BR_SSLKEYX_ECDHE_ECDSA:
 			if (kp->key_type != BR_KEYTYPE_EC)
 				continue;
-			if (choose_algo(choices, hashes >> 8, version, br_sha1_ID) != 0)
+			if (choose_algo(choices, hashes >> 8) != 0)
 				continue;
 			return 1;
 		case BR_SSLKEYX_ECDH_RSA:
@@ -221,9 +213,6 @@ policy_do_sign(const br_ssl_server_policy_class **vtable, unsigned algo_id,
 	switch (kp->key_type) {
 	case BR_KEYTYPE_RSA:
 		switch (algo_id & 0xFF) {
-		case br_sha1_ID:
-			hash_oid = BR_HASH_OID_SHA1;
-			break;
 		case br_sha224_ID:
 			hash_oid = BR_HASH_OID_SHA224;
 			break;
@@ -260,12 +249,6 @@ policy_do_sign(const br_ssl_server_policy_class **vtable, unsigned algo_id,
 		break;
 	case BR_KEYTYPE_EC:
 		switch (algo_id & 0xFF) {
-		case br_md5sha1_ID:
-			hash_impl = &br_md5sha1_vtable;
-			break;
-		case br_sha1_ID:
-			hash_impl = &br_sha1_vtable;
-			break;
 		case br_sha224_ID:
 			hash_impl = &br_sha224_vtable;
 			break;
