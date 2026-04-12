@@ -164,6 +164,7 @@ tls_get_peer_cert_common_name(struct tls *ctx, char **common_name)
 {
 	br_name_element *elt;
 
+	*common_name = NULL;
 	if (ctx->conn == NULL || ctx->conn->x509 == NULL)
 		return (-1);
 
