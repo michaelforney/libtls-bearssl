@@ -1,4 +1,4 @@
-/* $OpenBSD: tls.c,v 1.96 2023/05/25 07:46:21 op Exp $ */
+/* $OpenBSD: tls.c,v 1.98 2023/07/02 06:37:27 beck Exp $ */
 /*
  * Copyright (c) 2014 Joel Sing <jsing@openbsd.org>
  *
@@ -413,28 +413,6 @@ tls_conn_new(struct tls *ctx)
 	eng = &conn->u.engine;
 
 	switch (ctx->config->protocols) {
-	case TLS_PROTOCOL_TLSv1_0:
-		version_min = BR_TLS10;
-		version_max = BR_TLS10;
-		break;
-	case TLS_PROTOCOL_TLSv1_0|TLS_PROTOCOL_TLSv1_1:
-		version_min = BR_TLS10;
-		version_max = BR_TLS11;
-		break;
-	case TLS_PROTOCOL_TLSv1_0|TLS_PROTOCOL_TLSv1_1|TLS_PROTOCOL_TLSv1_2:
-	case TLS_PROTOCOL_TLSv1_0|TLS_PROTOCOL_TLSv1_1|TLS_PROTOCOL_TLSv1_2|TLS_PROTOCOL_TLSv1_3:
-		version_min = BR_TLS10;
-		version_max = BR_TLS12;
-		break;
-	case TLS_PROTOCOL_TLSv1_1:
-		version_min = BR_TLS11;
-		version_max = BR_TLS11;
-		break;
-	case TLS_PROTOCOL_TLSv1_1|TLS_PROTOCOL_TLSv1_2:
-	case TLS_PROTOCOL_TLSv1_1|TLS_PROTOCOL_TLSv1_2|TLS_PROTOCOL_TLSv1_3:
-		version_min = BR_TLS11;
-		version_max = BR_TLS12;
-		break;
 	case TLS_PROTOCOL_TLSv1_2:
 	case TLS_PROTOCOL_TLSv1_2|TLS_PROTOCOL_TLSv1_3:
 		version_min = BR_TLS12;
