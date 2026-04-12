@@ -435,6 +435,7 @@ tls_conn_new(struct tls *ctx)
 	}
 	br_ssl_engine_set_versions(eng, version_min, version_max);
 	br_ssl_engine_set_buffer(eng, conn->buf, BR_SSL_BUFSIZE_BIDI, 1);
+	br_ssl_engine_set_all_flags(eng, BR_OPT_FAIL_ON_ALPN_MISMATCH);
 
 	if (ctx->config->alpn != NULL) {
 		br_ssl_engine_set_protocol_names(eng, ctx->config->alpn,
