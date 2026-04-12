@@ -135,7 +135,7 @@ tls_get_peer_cert_subject(struct tls *ctx, char **subject)
 
 	/* calculate subject string length */
 	elts = ctx->conn->x509->subject_elts;
-	len = 0;
+	len = 1;
 	for (i = 0; i < TLS_DN_NUM_ELTS; ++i) {
 		if (elts[i].status == -1) {
 			tls_set_errorx(ctx, TLS_ERROR_UNKNOWN,
@@ -160,7 +160,9 @@ tls_get_peer_cert_subject(struct tls *ctx, char **subject)
 		p += escape_name_element(p, elts[i].buf);
 		*p++ = ',';
 	}
-	p[-1] = '\0';
+	if (len > 1)
+		--p;
+	*p = '\0';
 
 	return (0);
 
