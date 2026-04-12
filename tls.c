@@ -18,7 +18,6 @@
 #include <sys/socket.h>
 
 #include <errno.h>
-#include <limits.h>
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>

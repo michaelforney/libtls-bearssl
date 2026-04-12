@@ -16,9 +16,9 @@
  */
 
 #include <stdlib.h>
+#include <string.h>
 
 #include <tls.h>
-
 #include "tls_internal.h"
 
 struct tls_keypair *
