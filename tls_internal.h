@@ -275,6 +275,6 @@ void tls_conninfo_free(struct tls_conninfo *conninfo);
 
 int tls_hex_string(const unsigned char *_in, size_t _inlen, char **_out,
     size_t *_outlen);
-int tls_cert_hash(br_x509_certificate *cert, char **hash);
+int tls_cert_hash(br_x509_certificate *_cert, char **_hash);
 
 #endif /* HEADER_TLS_INTERNAL_H */
