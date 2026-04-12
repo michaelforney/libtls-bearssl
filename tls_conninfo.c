@@ -137,14 +137,20 @@ tls_get_peer_cert_subject(struct tls *ctx, char **subject)
 	elts = ctx->conn->x509->subject_elts;
 	len = 0;
 	for (i = 0; i < TLS_DN_NUM_ELTS; ++i) {
-		if (elts[i].status == -1)
-			return (-1);
+		if (elts[i].status == -1) {
+			tls_set_errorx(ctx, TLS_ERROR_UNKNOWN,
+			    "failed to decode subject element '%s'",
+			    attr[i]);
+			goto err;
+		}
 		if (elts[i].status == 1)
 			len += 4 + escape_name_element(NULL, elts[i].buf);
 	}
 
-	if ((*subject = p = malloc(len)) == NULL)
-		return (-1);
+	if ((*subject = p = malloc(len)) == NULL) {
+		tls_set_errorx(ctx, TLS_ERROR_OUT_OF_MEMORY, "out of memory");
+		goto err;
+	}
 
 	for (i = 0; i < TLS_DN_NUM_ELTS; ++i) {
 		if (elts[i].status != 1)
@@ -157,6 +163,9 @@ tls_get_peer_cert_subject(struct tls *ctx, char **subject)
 	p[-1] = '\0';
 
 	return (0);
+
+ err:
+	return (-1);
 }
 
 static int
