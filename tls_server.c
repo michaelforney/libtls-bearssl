@@ -267,7 +267,7 @@ policy_do_sign(const br_ssl_server_policy_class **vtable, unsigned algo_id,
 			goto err;
 		}
 
-		/* maximum size of supported ECDSA signature (P-512) */
+		/* maximum size of supported ECDSA signature (P-521) */
 		if (len < 139) {
 			tls_set_errorx(ctx, TLS_ERROR_UNKNOWN,
 			    "buffer is too small for RSA signature");
