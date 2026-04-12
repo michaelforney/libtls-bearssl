@@ -172,9 +172,8 @@ tls_config_free(struct tls_config *config)
 
 	free(config->error.msg);
 
-	if (config->alpn_len > 0)
-		free((char *)config->alpn[0]);
 	free(config->alpn);
+	free(config->alpn_buf);
 	for (i = 0; i < config->ca_len; ++i)
 		free(config->ca[i].dn.data);
 	free(config->ca);
@@ -285,25 +284,35 @@ tls_config_parse_protocols(uint32_t *protocols, const char *protostr)
 
 static int
 tls_config_parse_alpn(struct tls_config *config, const char *alpn,
-    const char ***alpn_data, size_t *alpn_len)
+    const char ***alpn_list, size_t *alpn_len, char **alpn_data)
 {
-	size_t names_len, i, len;
+	size_t buf_len, names_len, i, len;
 	const char **names = NULL;
-	char *s = NULL;
+	char *buf = NULL;
 	char *p, *q;
 
+	free(*alpn_list);
+	*alpn_list = NULL;
+	*alpn_len = 0;
 	free(*alpn_data);
 	*alpn_data = NULL;
-	*alpn_len = 0;
 
-	if ((s = strdup(alpn)) == NULL) {
+	if ((buf_len = strlen(alpn) + 1) > 65535) {
+		tls_config_set_errorx(config, TLS_ERROR_INVALID_ARGUMENT,
+		    "alpn too large");
+		goto err;
+	}
+
+	if ((buf = malloc(buf_len)) == NULL) {
 		tls_config_set_errorx(config, TLS_ERROR_OUT_OF_MEMORY,
 		    "out of memory");
 		goto err;
 	}
 
-	names_len = 0;
-	for (p = s; *p; ++p) {
+	memcpy(buf, alpn, buf_len);
+
+	names_len = 1;
+	for (p = buf; *p; ++p) {
 		if (*p == ',')
 			++names_len;
 	}
@@ -314,7 +323,7 @@ tls_config_parse_alpn(struct tls_config *config, const char *alpn,
 	}
 
 	i = 0;
-	q = s;
+	q = buf;
 	while ((p = strsep(&q, ",")) != NULL) {
 		if ((len = strlen(p)) == 0) {
 			tls_config_set_errorx(config, TLS_ERROR_INVALID_ARGUMENT,
@@ -329,16 +338,15 @@ tls_config_parse_alpn(struct tls_config *config, const char *alpn,
 		names[i++] = p;
 	}
 
-	free(s);
-
-	*alpn_data = names;
+	*alpn_list = names;
 	*alpn_len = names_len;
+	*alpn_data = buf;
 
 	return (0);
 
  err:
 	free(names);
-	free(s);
+	free(buf);
 
 	return (-1);
 }
@@ -347,7 +355,7 @@ int
 tls_config_set_alpn(struct tls_config *config, const char *alpn)
 {
 	return tls_config_parse_alpn(config, alpn, &config->alpn,
-	    &config->alpn_len);
+	    &config->alpn_len, &config->alpn_buf);
 }
 
 static int

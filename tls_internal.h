@@ -81,6 +81,7 @@ struct tls_config {
 
 	const char **alpn;
 	size_t alpn_len;
+	char *alpn_buf;
 	br_x509_trust_anchor *ca;
 	size_t ca_len;
 	const uint16_t *suites;
