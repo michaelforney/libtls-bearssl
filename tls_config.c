@@ -177,7 +177,7 @@ tls_config_free(struct tls_config *config)
 	for (i = 0; i < config->ca_len; ++i)
 		free(config->ca[i].dn.data);
 	free(config->ca);
-	free((uint16_t *)config->suites);
+	free(config->suites);
 
 	pthread_mutex_destroy(&config->mutex);
 
@@ -510,7 +510,11 @@ tls_config_set_ciphers(struct tls_config *config, const char *ciphers)
 	    strcasecmp(ciphers, "insecure") == 0)
 		ciphers = TLS_CIPHERS_ALL;
 
-	if (bearssl_parse_ciphers(ciphers, (uint16_t **)&config->suites,
+	free(config->suites);
+	config->suites = NULL;
+	config->suites_len = 0;
+
+	if (bearssl_parse_ciphers(ciphers, &config->suites,
 	    &config->suites_len) != 0) {
 		tls_config_set_errorx(config, TLS_ERROR_UNKNOWN,
 		    "failed to parse cipher list");
