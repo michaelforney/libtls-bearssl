@@ -1,4 +1,4 @@
-/* $OpenBSD: tls_config.c,v 1.63 2021/01/21 22:03:25 eric Exp $ */
+/* $OpenBSD: tls_config.c,v 1.65 2022/01/25 21:51:24 eric Exp $ */
 /*
  * Copyright (c) 2014 Joel Sing <jsing@openbsd.org>
  *
@@ -708,6 +708,14 @@ int
 tls_config_set_session_fd(struct tls_config *config, int session_fd)
 {
 	tls_config_set_errorx(config, "sessions are not supported");
+
+	return (-1);
+}
+
+int
+tls_config_set_sign_cb(struct tls_config *config, tls_sign_cb cb, void *cb_arg)
+{
+	tls_config_set_errorx(config, "sign callback is supported");
 
 	return (-1);
 }

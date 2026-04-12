@@ -1,4 +1,4 @@
-/* $OpenBSD: tls_internal.h,v 1.78 2021/01/21 19:09:10 eric Exp $ */
+/* $OpenBSD: tls_internal.h,v 1.79 2022/01/25 21:51:24 eric Exp $ */
 /*
  * Copyright (c) 2014 Jeremie Courreges-Anglas <jca@openbsd.org>
  * Copyright (c) 2014 Joel Sing <jsing@openbsd.org>
@@ -91,6 +91,12 @@ struct tls_config {
 	int verify_depth;
 	int verify_name;
 	int verify_time;
+	/* TODO: implement signer interface
+	int skip_private_key_check;
+	int use_fake_private_key;
+	tls_sign_cb sign_cb;
+	void *sign_cb_arg;
+	*/
 };
 
 struct tls_conninfo {
