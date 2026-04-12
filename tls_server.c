@@ -1,4 +1,4 @@
-/* $OpenBSD: tls_server.c,v 1.51 2024/03/26 08:54:48 joshua Exp $ */
+/* $OpenBSD: tls_server.c,v 1.52 2025/06/04 10:25:30 tb Exp $ */
 /*
  * Copyright (c) 2014 Joel Sing <jsing@openbsd.org>
  *
