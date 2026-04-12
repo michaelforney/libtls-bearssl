@@ -1,4 +1,4 @@
-/* $OpenBSD: tls.c,v 1.98 2023/07/02 06:37:27 beck Exp $ */
+/* $OpenBSD: tls.c,v 1.104 2024/04/08 20:47:32 tb Exp $ */
 /*
  * Copyright (c) 2014 Joel Sing <jsing@openbsd.org>
  *
@@ -61,24 +61,33 @@ tls_error(struct tls *ctx)
 	return ctx->error.msg;
 }
 
+int
+tls_error_code(struct tls *ctx)
+{
+	return ctx->error.code;
+}
+
 void
 tls_error_clear(struct tls_error *error)
 {
 	free(error->msg);
 	error->msg = NULL;
-	error->num = 0;
+	error->code = TLS_ERROR_UNKNOWN;
+	error->errno_value = 0;
 	error->tls = 0;
 }
 
 static int
-tls_error_vset(struct tls_error *error, int errnum, const char *fmt, va_list ap)
+tls_error_vset(struct tls_error *error, int code, int errno_value,
+    const char *fmt, va_list ap)
 {
 	char *errmsg = NULL;
 	int rv = -1;
 
 	tls_error_clear(error);
 
-	error->num = errnum;
+	error->code = code;
+	error->errno_value = errno_value;
 	error->tls = 1;
 
 	if (vasprintf(&errmsg, fmt, ap) == -1) {
@@ -86,12 +95,12 @@ tls_error_vset(struct tls_error *error, int errnum, const char *fmt, va_list ap)
 		goto err;
 	}
 
-	if (errnum == -1) {
+	if (errno_value == -1) {
 		error->msg = errmsg;
 		return (0);
 	}
 
-	if (asprintf(&error->msg, "%s: %s", errmsg, strerror(errnum)) == -1) {
+	if (asprintf(&error->msg, "%s: %s", errmsg, strerror(errno_value)) == -1) {
 		error->msg = NULL;
 		goto err;
 	}
@@ -104,91 +113,91 @@ tls_error_vset(struct tls_error *error, int errnum, const char *fmt, va_list ap)
 }
 
 int
-tls_error_set(struct tls_error *error, const char *fmt, ...)
+tls_error_set(struct tls_error *error, int code, const char *fmt, ...)
 {
 	va_list ap;
-	int errnum, rv;
+	int errno_value, rv;
 
-	errnum = errno;
+	errno_value = errno;
 
 	va_start(ap, fmt);
-	rv = tls_error_vset(error, errnum, fmt, ap);
+	rv = tls_error_vset(error, code, errno_value, fmt, ap);
 	va_end(ap);
 
 	return (rv);
 }
 
 int
-tls_error_setx(struct tls_error *error, const char *fmt, ...)
-{
-	va_list ap;
-	int rv;
-
-	va_start(ap, fmt);
-	rv = tls_error_vset(error, -1, fmt, ap);
-	va_end(ap);
-
-	return (rv);
-}
-
-int
-tls_config_set_error(struct tls_config *config, const char *fmt, ...)
-{
-	va_list ap;
-	int errnum, rv;
-
-	errnum = errno;
-
-	va_start(ap, fmt);
-	rv = tls_error_vset(&config->error, errnum, fmt, ap);
-	va_end(ap);
-
-	return (rv);
-}
-
-int
-tls_config_set_errorx(struct tls_config *config, const char *fmt, ...)
+tls_error_setx(struct tls_error *error, int code, const char *fmt, ...)
 {
 	va_list ap;
 	int rv;
 
 	va_start(ap, fmt);
-	rv = tls_error_vset(&config->error, -1, fmt, ap);
+	rv = tls_error_vset(error, code, -1, fmt, ap);
 	va_end(ap);
 
 	return (rv);
 }
 
 int
-tls_set_error(struct tls *ctx, const char *fmt, ...)
+tls_config_set_error(struct tls_config *config, int code, const char *fmt, ...)
 {
 	va_list ap;
-	int errnum, rv;
+	int errno_value, rv;
 
-	errnum = errno;
+	errno_value = errno;
 
 	va_start(ap, fmt);
-	rv = tls_error_vset(&ctx->error, errnum, fmt, ap);
+	rv = tls_error_vset(&config->error, code, errno_value, fmt, ap);
 	va_end(ap);
 
 	return (rv);
 }
 
 int
-tls_set_errorx(struct tls *ctx, const char *fmt, ...)
+tls_config_set_errorx(struct tls_config *config, int code, const char *fmt, ...)
 {
 	va_list ap;
 	int rv;
 
 	va_start(ap, fmt);
-	rv = tls_error_vset(&ctx->error, -1, fmt, ap);
+	rv = tls_error_vset(&config->error, code, -1, fmt, ap);
 	va_end(ap);
 
 	return (rv);
 }
 
 int
-tls_set_ssl_errorx(struct tls *ctx, const char *fmt, ...)
+tls_set_error(struct tls *ctx, int code, const char *fmt, ...)
+{
+	va_list ap;
+	int errno_value, rv;
+
+	errno_value = errno;
+
+	va_start(ap, fmt);
+	rv = tls_error_vset(&ctx->error, code, errno_value, fmt, ap);
+	va_end(ap);
+
+	return (rv);
+}
+
+int
+tls_set_errorx(struct tls *ctx, int code, const char *fmt, ...)
+{
+	va_list ap;
+	int rv;
+
+	va_start(ap, fmt);
+	rv = tls_error_vset(&ctx->error, code, -1, fmt, ap);
+	va_end(ap);
+
+	return (rv);
+}
+
+int
+tls_set_ssl_errorx(struct tls *ctx, int code, const char *fmt, ...)
 {
 	va_list ap;
 	int rv;
@@ -198,7 +207,7 @@ tls_set_ssl_errorx(struct tls *ctx, const char *fmt, ...)
 		return (0);
 
 	va_start(ap, fmt);
-	rv = tls_error_vset(&ctx->error, -1, fmt, ap);
+	rv = tls_error_vset(&ctx->error, code, -1, fmt, ap);
 	va_end(ap);
 
 	return (rv);
@@ -308,7 +317,8 @@ x509_start_cert(const br_x509_class **vtable, uint32_t length)
 	if (ctx->error.tls == 0) {
 		if ((chain = reallocarray(ctx->peer_chain, ctx->peer_chain_len + 1,
 		    sizeof(chain[0]))) == NULL) {
-			tls_set_error(ctx, "X.509 certificate chain");
+			tls_set_error(ctx, TLS_ERROR_OUT_OF_MEMORY,
+			    "out of memory");
 			return;
 		}
 		++ctx->peer_chain_len;
@@ -317,7 +327,8 @@ x509_start_cert(const br_x509_class **vtable, uint32_t length)
 		cert = &chain[ctx->peer_chain_len - 1];
 		cert->data_len = 0;
 		if ((cert->data = calloc(1, length)) == NULL) {
-			tls_set_error(ctx, "X.509 certificate chain");
+			tls_set_error(ctx, TLS_ERROR_OUT_OF_MEMORY,
+			    "out of memory");
 			return;
 		}
 	}
@@ -419,7 +430,8 @@ tls_conn_new(struct tls *ctx)
 		version_max = BR_TLS12;
 		break;
 	default:
-		tls_set_errorx(ctx, "unsupported set of protocol versions");
+		tls_set_errorx(ctx, TLS_ERROR_UNKNOWN,
+		    "unsupported set of protocol versions");
 		goto err;
 	}
 	br_ssl_engine_set_versions(eng, version_min, version_max);
@@ -480,13 +492,11 @@ tls_configure_x509(struct tls *ctx)
 	/* If no CA has been specified, attempt to load the default. */
 	if (ctx->config->verify_cert != 0 &&
 	    ctx->config->ca == NULL &&
-	    tls_config_set_ca_file(ctx->config, tls_default_ca_cert_file()) != 0) {
-		tls_set_errorx(ctx, "CA load failed");
+	    tls_config_set_ca_file(ctx->config, tls_default_ca_cert_file()) != 0)
 		goto err;
-	}
 
 	if ((x509 = calloc(1, sizeof(*x509))) == NULL) {
-		tls_set_error(ctx, "X.509 context");
+		tls_set_error(ctx, TLS_ERROR_OUT_OF_MEMORY, "out of memory");
 		goto err;
 	}
 
@@ -587,7 +597,7 @@ tls_reset(struct tls *ctx)
 
 	free(ctx->error.msg);
 	ctx->error.msg = NULL;
-	ctx->error.num = -1;
+	ctx->error.errno_value = -1;
 
 	tls_conninfo_free(ctx->conninfo);
 	ctx->conninfo = NULL;
@@ -624,7 +634,8 @@ tls_run_until(struct tls *ctx, unsigned target, unsigned finish, const char *pre
 		state = br_ssl_engine_current_state(eng);
 		if (state & BR_SSL_CLOSED) {
 			if ((err = br_ssl_engine_last_error(eng)) != 0)
-				tls_set_ssl_errorx(ctx, "%s (%d)", bearssl_strerror(err), err);
+				tls_set_ssl_errorx(ctx, TLS_ERROR_UNKNOWN,
+				    "%s (%d)", bearssl_strerror(err), err);
 			else
 				rv = 0;
 			goto out;
@@ -635,7 +646,8 @@ tls_run_until(struct tls *ctx, unsigned target, unsigned finish, const char *pre
 			if (ret == 0)
 				ret = -1;
 			if (ret == -1)
-				tls_set_error(ctx, "%s failed", prefix);
+				tls_set_error(ctx, TLS_ERROR_UNKNOWN,
+				    "%s failed", prefix);
 			if (ret < 0) {
 				rv = ret;
 				goto out;
@@ -648,7 +660,8 @@ tls_run_until(struct tls *ctx, unsigned target, unsigned finish, const char *pre
 		if (state & BR_SSL_RECVAPP) {
 			/* we use a bidirectional buffer, so this
 			 * should never happen */
-			tls_set_errorx(ctx, "unexpected I/O state");
+			tls_set_errorx(ctx, TLS_ERROR_UNKNOWN,
+			    "unexpected I/O state");
 			goto out;
 		}
 		if (state & BR_SSL_RECVREC) {
@@ -659,12 +672,14 @@ tls_run_until(struct tls *ctx, unsigned target, unsigned finish, const char *pre
 					ctx->state |= TLS_EOF_NO_CLOSE_NOTIFY;
 					rv = 0;
 				} else {
-					tls_set_errorx(ctx, "unexpected EOF");
+					tls_set_errorx(ctx, TLS_ERROR_UNKNOWN,
+					    "unexpected EOF");
 				}
 				goto out;
 			}
 			if (ret == -1)
-				tls_set_error(ctx, "%s failed", prefix);
+				tls_set_error(ctx, TLS_ERROR_UNKNOWN,
+				    "%s failed", prefix);
 			if (ret < 0) {
 				rv = ret;
 				goto out;
@@ -690,16 +705,19 @@ tls_handshake(struct tls *ctx)
 
 	if ((ctx->flags & TLS_CLIENT) != 0) {
 		if ((ctx->state & TLS_CONNECTED) == 0) {
-			tls_set_errorx(ctx, "context not connected");
+			tls_set_errorx(ctx, TLS_ERROR_UNKNOWN,
+			    "context not connected");
 			goto out;
 		}
 	} else if ((ctx->flags & TLS_SERVER_CONN) == 0) {
-		tls_set_errorx(ctx, "invalid operation for context");
+		tls_set_errorx(ctx, TLS_ERROR_INVALID_CONTEXT,
+		    "invalid operation for context");
 		goto out;
 	}
 
 	if ((ctx->state & TLS_HANDSHAKE_COMPLETE) != 0) {
-		tls_set_errorx(ctx, "handshake already completed");
+		tls_set_errorx(ctx, TLS_ERROR_UNKNOWN,
+		    "handshake already completed");
 		goto out;
 	}
 
@@ -772,7 +790,8 @@ tls_write(struct tls *ctx, const void *buf, size_t buflen)
 
 	for (;;) {
 		if ((rv = tls_run_until(ctx, BR_SSL_SENDAPP, 0, "write")) == 0) {
-			tls_set_ssl_errorx(ctx, "connection closed");
+			tls_set_ssl_errorx(ctx, TLS_ERROR_UNKNOWN,
+			    "connection closed");
 			rv = -1;
 		}
 		if (rv != 1)
@@ -807,7 +826,8 @@ tls_close(struct tls *ctx)
 	tls_error_clear(&ctx->error);
 
 	if ((ctx->flags & (TLS_CLIENT | TLS_SERVER_CONN)) == 0) {
-		tls_set_errorx(ctx, "invalid operation for context");
+		tls_set_errorx(ctx, TLS_ERROR_INVALID_CONTEXT,
+		    "invalid operation for context");
 		rv = -1;
 		goto out;
 	}
@@ -829,13 +849,13 @@ tls_close(struct tls *ctx)
 		if (shutdown(ctx->socket, SHUT_RDWR) != 0) {
 			if (rv == 0 &&
 			    errno != ENOTCONN && errno != ECONNRESET) {
-				tls_set_error(ctx, "shutdown");
+				tls_set_error(ctx, TLS_ERROR_UNKNOWN, "shutdown");
 				rv = -1;
 			}
 		}
 		if (close(ctx->socket) != 0) {
 			if (rv == 0) {
-				tls_set_error(ctx, "close");
+				tls_set_error(ctx, TLS_ERROR_UNKNOWN, "close");
 				rv = -1;
 			}
 		}
@@ -843,7 +863,7 @@ tls_close(struct tls *ctx)
 	}
 
 	if ((ctx->state & TLS_EOF_NO_CLOSE_NOTIFY) != 0) {
-		tls_set_errorx(ctx, "EOF without close notify");
+		tls_set_errorx(ctx, TLS_ERROR_UNKNOWN, "EOF without close notify");
 		rv = -1;
 	}
 

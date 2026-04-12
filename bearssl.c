@@ -571,7 +571,8 @@ append_dn(void *ptr, const void *buf, size_t len)
 	if (ctx->error->tls || !ctx->in_cert)
 		return;
 	if (sizeof(ctx->dn) - ctx->dn_len < len) {
-		tls_error_setx(ctx->error, "X.509 DN is too long");
+		tls_error_setx(ctx->error, TLS_ERROR_UNKNOWN,
+		    "X.509 DN is too long");
 		return;
 	}
 	memcpy(ctx->dn + ctx->dn_len, buf, len);
@@ -626,7 +627,8 @@ bearssl_load_ca(struct tls_error *error, const uint8_t *mem, size_t len, br_x509
 			if (anchors_len == anchors_cap) {
 				anchors_cap = anchors_cap ? anchors_cap * 2 : 32;
 				if ((new_anchors = reallocarray(anchors, anchors_cap, sizeof(anchors[0]))) == NULL) {
-					tls_error_setx(error, "allocate CA list");
+					tls_error_setx(error, TLS_ERROR_OUT_OF_MEMORY,
+					    "out of memory");
 					goto err;
 				}
 				anchors = new_anchors;
@@ -641,7 +643,8 @@ bearssl_load_ca(struct tls_error *error, const uint8_t *mem, size_t len, br_x509
 				break;
 			ctx.in_cert = 0;
 			if ((ret = br_x509_decoder_last_error(&ctx.xc)) != 0) {
-				tls_error_setx(error, "certificate decoding failed: %s",
+				tls_error_setx(error, TLS_ERROR_UNKNOWN,
+				    "certificate decoding failed: %s",
 				    bearssl_strerror(ret));
 				goto err;
 			}
@@ -650,7 +653,8 @@ bearssl_load_ca(struct tls_error *error, const uint8_t *mem, size_t len, br_x509
 				ta->flags |= BR_X509_TA_CA;
 			pkey = br_x509_decoder_get_pkey(&ctx.xc);
 			if (!pkey) {
-				tls_error_setx(error, "certificate public key");
+				tls_error_setx(error, TLS_ERROR_UNKNOWN,
+				    "certificate public key");
 				goto err;
 			}
 			ta->pkey = *pkey;
@@ -665,13 +669,15 @@ bearssl_load_ca(struct tls_error *error, const uint8_t *mem, size_t len, br_x509
 				ta_size += pkey->key.ec.qlen;
 				break;
 			default:
-				tls_error_setx(error, "unknown public key type");
+				tls_error_setx(error, TLS_ERROR_UNKNOWN,
+				    "unknown public key type");
 				goto err;
 			}
 
 			/* fill in trust anchor DN and public key data */
 			if ((ta->dn.data = malloc(ta_size)) == NULL) {
-				tls_error_set(error, "allocate trust anchor");
+				tls_error_set(error, TLS_ERROR_OUT_OF_MEMORY,
+				    "out of memory");
 				goto err;
 			}
 			memcpy(ta->dn.data, ctx.dn, ctx.dn_len);
@@ -690,7 +696,8 @@ bearssl_load_ca(struct tls_error *error, const uint8_t *mem, size_t len, br_x509
 			}
 			break;
 		default:
-			tls_error_setx(error, "unknown PEM decoder event");
+			tls_error_setx(error, TLS_ERROR_UNKNOWN,
+			    "unknown PEM decoder event");
 			goto err;
 		}
 	}

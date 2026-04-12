@@ -1,4 +1,4 @@
-/* $OpenBSD: tls_signer.c,v 1.9 2023/06/18 19:12:58 tb Exp $ */
+/* $OpenBSD: tls_signer.c,v 1.13 2024/06/11 16:35:24 op Exp $ */
 /*
  * Copyright (c) 2021 Eric Faurot <eric@openbsd.org>
  *
@@ -14,6 +14,9 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
+
+#include <stdlib.h>
+#include <string.h>
 
 #include "tls.h"
 #include "tls_internal.h"
@@ -69,7 +72,7 @@ int
 tls_signer_add_keypair_mem(struct tls_signer *signer, const uint8_t *cert,
     size_t cert_len, const uint8_t *key, size_t key_len)
 {
-	tls_error_setx(&signer->error, "not implemented");
+	tls_error_setx(&signer->error, TLS_ERROR_UNKNOWN, "not implemented");
 
 	return (-1);
 }
@@ -78,7 +81,7 @@ int
 tls_signer_add_keypair_file(struct tls_signer *signer, const char *cert_file,
     const char *key_file)
 {
-	tls_error_setx(&signer->error, "not implemented");
+	tls_error_setx(&signer->error, TLS_ERROR_UNKNOWN, "not implemented");
 
 	return (-1);
 }
@@ -97,7 +100,7 @@ tls_signer_sign(struct tls_signer *signer, const char *pubkey_hash,
 		if (!strcmp(pubkey_hash, skey->hash))
 			break;
 
-	tls_error_setx(&signer->error, "not implemented");
+	tls_error_setx(&signer->error, TLS_ERROR_UNKNOWN, "not implemented");
 
 	return (-1);
 }

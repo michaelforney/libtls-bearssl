@@ -1,4 +1,4 @@
-/* $OpenBSD: tls_verify.c,v 1.29 2023/11/22 18:23:09 op Exp $ */
+/* $OpenBSD: tls_verify.c,v 1.30 2024/03/26 06:24:52 joshua Exp $ */
 /*
  * Copyright (c) 2014 Jeremie Courreges-Anglas <jca@openbsd.org>
  *
@@ -39,7 +39,8 @@ tls_check_name(struct tls *ctx, br_x509_certificate *cert, const char *name, int
 		*match = 0;
 		break;
 	default:
-		tls_set_errorx(ctx, "certificate name match: %s",
+		tls_set_errorx(ctx, TLS_ERROR_UNKNOWN,
+		    "certificate name match: %s",
 		    bearssl_strerror(err));
 		return -1;
 	}

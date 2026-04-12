@@ -1,4 +1,4 @@
-/* $OpenBSD: tls_server.c,v 1.49 2023/05/14 07:26:25 op Exp $ */
+/* $OpenBSD: tls_server.c,v 1.51 2024/03/26 08:54:48 joshua Exp $ */
 /*
  * Copyright (c) 2014 Joel Sing <jsing@openbsd.org>
  *
@@ -212,7 +212,8 @@ policy_do_sign(const br_ssl_server_policy_class **vtable, unsigned algo_id,
 	size_t rv = 0;
 
 	if (hv_len > sizeof(hv)) {
-		tls_set_errorx(ctx, "buffer too small for hash value");
+		tls_set_errorx(ctx, TLS_ERROR_UNKNOWN,
+		    "buffer too small for hash value");
 		goto err;
 	}
 
@@ -237,19 +238,22 @@ policy_do_sign(const br_ssl_server_policy_class **vtable, unsigned algo_id,
 			hash_oid = BR_HASH_OID_SHA512;
 			break;
 		default:
-			tls_set_errorx(ctx, "unknown hash function for RSA signature");
+			tls_set_errorx(ctx, TLS_ERROR_UNKNOWN,
+			    "unknown hash function for RSA signature");
 			goto err;
 		}
 
 		sig_len = (kp->key.rsa.n_bitlen + 7) >> 3;
 		if (len < sig_len) {
-			tls_set_errorx(ctx, "buffer is too small for RSA signature");
+			tls_set_errorx(ctx, TLS_ERROR_UNKNOWN,
+			    "buffer is too small for RSA signature");
 			goto err;
 		}
 
 		rsa_sign = br_rsa_pkcs1_sign_get_default();
 		if (rsa_sign(hash_oid, hv, hv_len, &kp->key.rsa, data) != 1) {
-			tls_set_errorx(ctx, "RSA sign failed");
+			tls_set_errorx(ctx, TLS_ERROR_UNKNOWN,
+			    "RSA sign failed");
 			goto err;
 		}
 
@@ -276,25 +280,29 @@ policy_do_sign(const br_ssl_server_policy_class **vtable, unsigned algo_id,
 			hash_impl = &br_sha512_vtable;
 			break;
 		default:
-			tls_set_errorx(ctx, "unknown hash function for ECDSA signature");
+			tls_set_errorx(ctx, TLS_ERROR_UNKNOWN,
+			    "unknown hash function for ECDSA signature");
 			goto err;
 		}
 
 		/* maximum size of supported ECDSA signature (P-512) */
 		if (len < 139) {
-			tls_set_errorx(ctx, "buffer is too small for RSA signature");
+			tls_set_errorx(ctx, TLS_ERROR_UNKNOWN,
+			    "buffer is too small for RSA signature");
 			goto err;
 		}
 
 		ec = br_ec_get_default();
 		ecdsa_sign = br_ecdsa_sign_asn1_get_default();
 		if ((rv = ecdsa_sign(ec, hash_impl, hv, &kp->key.ec, data)) == 0) {
-			tls_set_errorx(ctx, "ECDSA sign failed");
+			tls_set_errorx(ctx, TLS_ERROR_UNKNOWN,
+			    "ECDSA sign failed");
 			goto err;
 		}
 		break;
 	default:
-		tls_set_errorx(ctx, "unknown private key type");
+		tls_set_errorx(ctx, TLS_ERROR_UNKNOWN,
+		    "unknown private key type");
 		break;
 	}
 
@@ -316,12 +324,14 @@ tls_accept_common(struct tls *ctx)
 	uint32_t flags;
 
 	if ((ctx->flags & TLS_SERVER) == 0) {
-		tls_set_errorx(ctx, "not a server context");
+		tls_set_errorx(ctx, TLS_ERROR_INVALID_CONTEXT,
+		    "not a server context");
 		goto err;
 	}
 
 	if ((conn_ctx = tls_server_conn(ctx)) == NULL) {
-		tls_set_errorx(ctx, "connection context failure");
+		tls_set_errorx(ctx, TLS_ERROR_UNKNOWN,
+		    "connection context failure");
 		goto err;
 	}
 
@@ -341,7 +351,8 @@ tls_accept_common(struct tls *ctx)
 			goto err;
 
 		if (ctx->config->ca_len == 0) {
-			tls_set_errorx(ctx, "cannot verify client without trust anchors");
+			tls_set_errorx(ctx, TLS_ERROR_UNKNOWN,
+			    "cannot verify client without trust anchors");
 			goto err;
 		}
 

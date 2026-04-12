@@ -1,4 +1,4 @@
-/*	$OpenBSD: tls_ocsp.c,v 1.24 2023/11/13 10:56:19 tb Exp $ */
+/*	$OpenBSD: tls_ocsp.c,v 1.26 2024/03/26 06:24:52 joshua Exp $ */
 /*
  * Copyright (c) 2015 Marko Kreen <markokr@gmail.com>
  * Copyright (c) 2016 Bob Beck <beck@openbsd.org>

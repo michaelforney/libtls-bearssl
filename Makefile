@@ -12,7 +12,7 @@ INCDIR?=$(PREFIX)/include
 LIBDIR?=$(PREFIX)/lib
 MANDIR?=$(PREFIX)/share/man
 LDLIBS?=-l bearssl -l pthread
-CFLAGS+=-Wall -Wpedantic -Wshadow -D _GNU_SOURCE -I .
+CFLAGS+=-Wall -Wpedantic -Wshadow -D _GNU_SOURCE -D LIBRESSL_INTERNAL -I .
 CFLAGS_SHARED?=-fPIC
 LDFLAGS_SHARED?=-shared -Wl,-soname,libtls.so.$(major) -Wl,--version-script=libtls.ver
 

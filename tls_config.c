@@ -1,4 +1,4 @@
-/* $OpenBSD: tls_config.c,v 1.67 2023/07/02 06:37:27 beck Exp $ */
+/* $OpenBSD: tls_config.c,v 1.71 2024/08/02 15:00:01 tb Exp $ */
 /*
  * Copyright (c) 2014 Joel Sing <jsing@openbsd.org>
  *
@@ -56,12 +56,14 @@ tls_config_load_file(struct tls_error *error, const char *filetype,
 	*len = 0;
 
 	if ((fd = open(filename, O_RDONLY)) == -1) {
-		tls_error_set(error, "failed to open %s file '%s'",
+		tls_error_set(error, TLS_ERROR_UNKNOWN,
+		    "failed to open %s file '%s'",
 		    filetype, filename);
 		goto err;
 	}
 	if (fstat(fd, &st) != 0) {
-		tls_error_set(error, "failed to stat %s file '%s'",
+		tls_error_set(error, TLS_ERROR_UNKNOWN,
+		    "failed to stat %s file '%s'",
 		    filetype, filename);
 		goto err;
 	}
@@ -69,13 +71,15 @@ tls_config_load_file(struct tls_error *error, const char *filetype,
 		goto err;
 	*len = (size_t)st.st_size;
 	if ((*buf = malloc(*len)) == NULL) {
-		tls_error_set(error, "failed to allocate buffer for "
-		    "%s file", filetype);
+		tls_error_set(error, TLS_ERROR_UNKNOWN,
+		    "failed to allocate buffer for %s file",
+		    filetype);
 		goto err;
 	}
 	n = read(fd, *buf, *len);
 	if (n < 0 || (size_t)n != *len) {
-		tls_error_set(error, "failed to read %s file '%s'",
+		tls_error_set(error, TLS_ERROR_UNKNOWN,
+		    "failed to read %s file '%s'",
 		    filetype, filename);
 		goto err;
 	}
@@ -199,6 +203,12 @@ tls_config_error(struct tls_config *config)
 	return config->error.msg;
 }
 
+int
+tls_config_error_code(struct tls_config *config)
+{
+	return config->error.code;
+}
+
 void
 tls_config_clear_keys(struct tls_config *config)
 {
@@ -247,9 +257,9 @@ tls_config_parse_protocols(uint32_t *protocols, const char *protostr)
 		if (strcasecmp(p, "tlsv1") == 0)
 			proto = TLS_PROTOCOL_TLSv1;
 		else if (strcasecmp(p, "tlsv1.0") == 0)
-			proto = TLS_PROTOCOL_TLSv1_2;
+			proto = TLS_PROTOCOL_TLSv1_0;
 		else if (strcasecmp(p, "tlsv1.1") == 0)
-			proto = TLS_PROTOCOL_TLSv1_2;
+			proto = TLS_PROTOCOL_TLSv1_1;
 		else if (strcasecmp(p, "tlsv1.2") == 0)
 			proto = TLS_PROTOCOL_TLSv1_2;
 		else if (strcasecmp(p, "tlsv1.3") == 0)
@@ -287,7 +297,8 @@ tls_config_parse_alpn(struct tls_config *config, const char *alpn,
 	*alpn_len = 0;
 
 	if ((s = strdup(alpn)) == NULL) {
-		tls_config_set_errorx(config, "out of memory");
+		tls_config_set_errorx(config, TLS_ERROR_OUT_OF_MEMORY,
+		    "out of memory");
 		goto err;
 	}
 
@@ -297,7 +308,8 @@ tls_config_parse_alpn(struct tls_config *config, const char *alpn,
 			++names_len;
 	}
 	if ((names = reallocarray(NULL, names_len, sizeof(names[0]))) == NULL) {
-		tls_config_set_errorx(config, "out of memory");
+		tls_config_set_errorx(config, TLS_ERROR_OUT_OF_MEMORY,
+		    "out of memory");
 		goto err;
 	}
 
@@ -305,12 +317,12 @@ tls_config_parse_alpn(struct tls_config *config, const char *alpn,
 	q = s;
 	while ((p = strsep(&q, ",")) != NULL) {
 		if ((len = strlen(p)) == 0) {
-			tls_config_set_errorx(config,
+			tls_config_set_errorx(config, TLS_ERROR_INVALID_ARGUMENT,
 			    "alpn protocol with zero length");
 			goto err;
 		}
 		if (len > 255) {
-			tls_config_set_errorx(config,
+			tls_config_set_errorx(config, TLS_ERROR_INVALID_ARGUMENT,
 			    "alpn protocol too long");
 			goto err;
 		}
@@ -492,7 +504,8 @@ tls_config_set_ciphers(struct tls_config *config, const char *ciphers)
 
 	if (bearssl_parse_ciphers(ciphers, (uint16_t **)&config->suites,
 	    &config->suites_len) != 0) {
-		tls_config_set_errorx(config, "failed to parse cipher list");
+		tls_config_set_errorx(config, TLS_ERROR_UNKNOWN,
+		    "failed to parse cipher list");
 		goto err;
 	}
 
@@ -529,7 +542,8 @@ tls_config_set_dheparams(struct tls_config *config, const char *params)
 	else if (strcasecmp(params, "legacy") == 0)
 		keylen = 1024;
 	else {
-		tls_config_set_errorx(config, "invalid dhe param '%s'", params);
+		tls_config_set_errorx(config, TLS_ERROR_UNKNOWN,
+		    "invalid dhe param '%s'", params);
 		return (-1);
 	}
 
@@ -546,8 +560,8 @@ tls_config_set_ecdhecurve(struct tls_config *config, const char *curve)
 	    strcasecmp(curve, "auto") == 0) {
 		curve = TLS_ECDHE_CURVES;
 	} else if (strchr(curve, ',') != NULL || strchr(curve, ':') != NULL) {
-		tls_config_set_errorx(config, "invalid ecdhe curve '%s'",
-		    curve);
+		tls_config_set_errorx(config, TLS_ERROR_UNKNOWN,
+		    "invalid ecdhe curve '%s'", curve);
 		return (-1);
 	}
 
@@ -579,7 +593,8 @@ tls_config_set_ecdhecurves(struct tls_config *config, const char *curve_names)
 		curve_names = TLS_ECDHE_CURVES;
 
 	if ((cs = strdup(curve_names)) == NULL) {
-		tls_config_set_errorx(config, "out of memory");
+		tls_config_set_errorx(config, TLS_ERROR_OUT_OF_MEMORY,
+		    "out of memory");
 		goto err;
 	}
 
@@ -594,6 +609,7 @@ next:
 			if (strcmp(p, curves[j].name) == 0) {
 				if (j < i) {
 					tls_config_set_errorx(config,
+					    TLS_ERROR_UNKNOWN,
 					    "unsupported ecdhe curve order");
 					goto err;
 				}
@@ -602,7 +618,7 @@ next:
 				goto next;
 			}
 		}
-		tls_config_set_errorx(config,
+		tls_config_set_errorx(config, TLS_ERROR_UNKNOWN,
 		    "invalid ecdhe curve '%s'", p);
 		goto err;
 	}
@@ -708,7 +724,8 @@ tls_config_set_protocols(struct tls_config *config, uint32_t protocols)
 int
 tls_config_set_session_fd(struct tls_config *config, int session_fd)
 {
-	tls_config_set_errorx(config, "sessions are not supported");
+	tls_config_set_errorx(config, TLS_ERROR_UNKNOWN,
+	    "sessions are not supported");
 
 	return (-1);
 }
@@ -716,7 +733,8 @@ tls_config_set_session_fd(struct tls_config *config, int session_fd)
 int
 tls_config_set_sign_cb(struct tls_config *config, tls_sign_cb cb, void *cb_arg)
 {
-	tls_config_set_errorx(config, "sign callback is supported");
+	tls_config_set_errorx(config, TLS_ERROR_UNKNOWN,
+	    "sign callback is not supported");
 
 	return (-1);
 }
@@ -804,7 +822,8 @@ int
 tls_config_set_session_id(struct tls_config *config,
     const unsigned char *session_id, size_t len)
 {
-	tls_config_set_errorx(config, "session resumption is not supported");
+	tls_config_set_errorx(config, TLS_ERROR_UNKNOWN,
+	    "session resumption is not supported");
 	return (-1);
 }
 
@@ -812,7 +831,7 @@ int
 tls_config_set_session_lifetime(struct tls_config *config, int lifetime)
 {
 	if (lifetime != 0) {
-		tls_config_set_errorx(config,
+		tls_config_set_errorx(config, TLS_ERROR_UNKNOWN,
 		    "session resumption is not supported");
 		return (-1);
 	}
@@ -824,6 +843,7 @@ int
 tls_config_add_ticket_key(struct tls_config *config, uint32_t keyrev,
     unsigned char *key, size_t keylen)
 {
-	tls_config_set_errorx(config, "session resumption is not supported");
+	tls_config_set_errorx(config, TLS_ERROR_UNKNOWN,
+	    "session resumption is not supported");
 	return (-1);
 }

@@ -1,4 +1,4 @@
-/* $OpenBSD: tls_keypair.c,v 1.8 2021/01/05 17:37:12 jsing Exp $ */
+/* $OpenBSD: tls_keypair.c,v 1.9 2024/03/26 06:24:52 joshua Exp $ */
 /*
  * Copyright (c) 2014 Joel Sing <jsing@openbsd.org>
  *
@@ -80,7 +80,8 @@ append_cert(void *data, const void *src, size_t len)
 		cap = ctx->cap ? ctx->cap * 2 : 1024;
 	if (ctx->cap != cap) {
 		if ((buf = realloc(ctx->buf, cap)) == NULL) {
-			tls_error_set(ctx->error, "certificate buffer");
+			tls_error_set(ctx->error, TLS_ERROR_OUT_OF_MEMORY,
+			    "out of memory");
 			return;
 		}
 		ctx->buf = buf;
@@ -118,7 +119,8 @@ tls_keypair_set_cert_mem(struct tls_keypair *keypair, struct tls_error *error,
 			}
 			++chain_len;
 			if ((new_chain = reallocarray(chain, chain_len, sizeof(chain[0]))) == NULL) {
-				tls_error_set(error, "certificate chain");
+				tls_error_set(error, TLS_ERROR_OUT_OF_MEMORY,
+				    "out of memory");
 				goto err;
 			}
 			chain = new_chain;
@@ -130,19 +132,22 @@ tls_keypair_set_cert_mem(struct tls_keypair *keypair, struct tls_error *error,
 			if (cert == NULL)
 				break;
 			if ((cert->data = malloc(ctx.len)) == NULL) {
-				tls_error_set(error, "certificate data");
+				tls_error_set(error, TLS_ERROR_OUT_OF_MEMORY,
+				    "certificate data");
 				goto err;
 			}
 			memcpy(cert->data, ctx.buf, ctx.len);
 			cert->data_len = ctx.len;
 			break;
 		default:
-			tls_error_setx(error, "certificate decoding failed");
+			tls_error_setx(error, TLS_ERROR_UNKNOWN,
+			    "certificate decoding failed");
 			goto err;
 		}
 	}
 	if (chain_len == 0) {
-		tls_error_setx(error, "empty certificate chain");
+		tls_error_setx(error, TLS_ERROR_UNKNOWN,
+		    "empty certificate chain");
 		goto err;
 	}
 
@@ -228,7 +233,7 @@ tls_keypair_set_key_mem(struct tls_keypair *keypair, struct tls_error *error,
 				break;
 			in_key = 0;
 			if ((err = br_skey_decoder_last_error(&kc)) != 0) {
-				tls_error_setx(error,
+				tls_error_setx(error, TLS_ERROR_UNKNOWN,
 				    "secret key decoding failed: %s",
 				    bearssl_strerror(err));
 				goto err;
@@ -237,7 +242,8 @@ tls_keypair_set_key_mem(struct tls_keypair *keypair, struct tls_error *error,
 			len = 0;
 			break;
 		default:
-			tls_error_setx(error, "secret key decoding failed");
+			tls_error_setx(error, TLS_ERROR_UNKNOWN,
+			    "secret key decoding failed");
 			goto err;
 		}
 	}
@@ -247,7 +253,8 @@ tls_keypair_set_key_mem(struct tls_keypair *keypair, struct tls_error *error,
 		rsa = br_skey_decoder_get_rsa(&kc);
 		data_len = rsa->plen + rsa->qlen + rsa->dplen + rsa->dqlen + rsa->iqlen;
 		if ((data = malloc(data_len)) == NULL) {
-			tls_error_set(error, "RSA secret key");
+			tls_error_set(error, TLS_ERROR_OUT_OF_MEMORY,
+			    "out of memory");
 			goto err;
 		}
 		keypair->key.rsa = *rsa;
@@ -277,7 +284,8 @@ tls_keypair_set_key_mem(struct tls_keypair *keypair, struct tls_error *error,
 		ec = br_skey_decoder_get_ec(&kc);
 		data_len = ec->xlen;
 		if ((data = malloc(data_len)) == NULL) {
-			tls_error_set(error, "EC secret key");
+			tls_error_set(error, TLS_ERROR_OUT_OF_MEMORY,
+			    "out of memory");
 			goto err;
 		}
 		keypair->key.ec = *ec;
@@ -285,7 +293,8 @@ tls_keypair_set_key_mem(struct tls_keypair *keypair, struct tls_error *error,
 		memcpy(data, ec->x, ec->xlen);
 		break;
 	default:
-		tls_error_setx(error, "unsupported or missing secret key");
+		tls_error_setx(error, TLS_ERROR_UNKNOWN,
+		    "unsupported or missing secret key");
 		goto err;
 	}
 
@@ -306,7 +315,8 @@ int
 tls_keypair_set_ocsp_staple_file(struct tls_keypair *keypair,
     struct tls_error *error, const char *ocsp_file)
 {
-	tls_error_setx(error, "OCSP stapling is not supported");
+	tls_error_setx(error, TLS_ERROR_UNKNOWN,
+	    "OCSP stapling is not supported");
 	return (-1);
 }
 
@@ -314,7 +324,8 @@ int
 tls_keypair_set_ocsp_staple_mem(struct tls_keypair *keypair,
     struct tls_error *error, const uint8_t *staple, size_t len)
 {
-	tls_error_setx(error, "OCSP stapling is not supported");
+	tls_error_setx(error, TLS_ERROR_UNKNOWN,
+	    "OCSP stapling is not supported");
 	return (-1);
 }
 
@@ -333,11 +344,13 @@ tls_keypair_check(struct tls_keypair *keypair, struct tls_error *error)
 	int rv = -1, ret;
 
 	if (keypair->key_type == 0) {
-		tls_error_setx(error, "incomplete key pair; missing private key");
+		tls_error_setx(error, TLS_ERROR_UNKNOWN,
+		    "incomplete key pair; missing private key");
 		return -1;
 	}
 	if (keypair->chain_len == 0) {
-		tls_error_setx(error, "incomplete key pair; missing certificate chain");
+		tls_error_setx(error, TLS_ERROR_UNKNOWN,
+		    "incomplete key pair; missing certificate chain");
 		return -1;
 	}
 
@@ -345,7 +358,8 @@ tls_keypair_check(struct tls_keypair *keypair, struct tls_error *error)
 	br_x509_decoder_init(&xc, NULL, NULL);
 	br_x509_decoder_push(&xc, cert->data, cert->data_len);
 	if ((ret = br_x509_decoder_last_error(&xc)) != 0) {
-		tls_error_setx(error, "%s", bearssl_strerror(ret));
+		tls_error_setx(error, TLS_ERROR_UNKNOWN, "%s",
+		    bearssl_strerror(ret));
 		return -1;
 	}
 
@@ -380,7 +394,7 @@ tls_keypair_check(struct tls_keypair *keypair, struct tls_error *error)
 	return (0);
 
  err:
-	tls_error_setx(error, "private/public key mismatch");
+	tls_error_setx(error, TLS_ERROR_UNKNOWN, "private/public key mismatch");
 	return (rv);
 }
 

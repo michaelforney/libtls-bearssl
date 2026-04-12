@@ -1,4 +1,4 @@
-/* $OpenBSD: tls_bio_cb.c,v 1.21 2023/05/14 07:26:25 op Exp $ */
+/* $OpenBSD: tls_bio_cb.c,v 1.22 2024/03/26 06:24:52 joshua Exp $ */
 /*
  * Copyright (c) 2016 Tobias Pape <tobias@netshed.de>
  *
@@ -53,7 +53,7 @@ tls_set_cbs(struct tls *ctx, tls_read_cb read_cb, tls_write_cb write_cb,
 	int rv = -1;
 
 	if (read_cb == NULL || write_cb == NULL) {
-		tls_set_errorx(ctx, "no callbacks provided");
+		tls_set_errorx(ctx, TLS_ERROR_UNKNOWN, "no callbacks provided");
 		goto err;
 	}
 

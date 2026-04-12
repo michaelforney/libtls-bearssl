@@ -1,4 +1,4 @@
-/* $OpenBSD: tls_client.c,v 1.49 2023/05/14 07:26:25 op Exp $ */
+/* $OpenBSD: tls_client.c,v 1.51 2024/03/26 08:54:48 joshua Exp $ */
 /*
  * Copyright (c) 2014 Joel Sing <jsing@openbsd.org>
  *
@@ -65,12 +65,13 @@ tls_connect_servername(struct tls *ctx, const char *host, const char *port,
 	int rv = -1, s = -1, ret;
 
 	if ((ctx->flags & TLS_CLIENT) == 0) {
-		tls_set_errorx(ctx, "not a client context");
+		tls_set_errorx(ctx, TLS_ERROR_INVALID_CONTEXT,
+		    "not a client context");
 		goto err;
 	}
 
 	if (host == NULL) {
-		tls_set_errorx(ctx, "host not specified");
+		tls_set_errorx(ctx, TLS_ERROR_UNKNOWN, "host not specified");
 		goto err;
 	}
 
@@ -78,11 +79,11 @@ tls_connect_servername(struct tls *ctx, const char *host, const char *port,
 	if (port == NULL) {
 		ret = tls_host_port(host, &hs, &ps);
 		if (ret == -1) {
-			tls_set_errorx(ctx, "memory allocation failure");
+			tls_set_errorx(ctx, TLS_ERROR_OUT_OF_MEMORY, "out of memory");
 			goto err;
 		}
 		if (ret != 0) {
-			tls_set_errorx(ctx, "no port provided");
+			tls_set_errorx(ctx, TLS_ERROR_UNKNOWN, "no port provided");
 			goto err;
 		}
 	}
@@ -113,7 +114,8 @@ tls_connect_servername(struct tls *ctx, const char *host, const char *port,
 			hints.ai_family = AF_UNSPEC;
 			hints.ai_flags = AI_ADDRCONFIG;
 			if ((s = getaddrinfo(h, p, &hints, &res0)) != 0) {
-				tls_set_errorx(ctx, "%s", gai_strerror(s));
+				tls_set_errorx(ctx, TLS_ERROR_UNKNOWN,
+				    "%s", gai_strerror(s));
 				goto err;
 			}
 		}
@@ -124,11 +126,13 @@ tls_connect_servername(struct tls *ctx, const char *host, const char *port,
 	for (res = res0; res; res = res->ai_next) {
 		s = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
 		if (s == -1) {
-			tls_set_error(ctx, "socket");
+			tls_set_error(ctx, TLS_ERROR_UNKNOWN,
+			    "socket");
 			continue;
 		}
 		if (connect(s, res->ai_addr, res->ai_addrlen) == -1) {
-			tls_set_error(ctx, "connect");
+			tls_set_error(ctx, TLS_ERROR_UNKNOWN,
+			    "connect");
 			close(s);
 			s = -1;
 			continue;
@@ -169,13 +173,15 @@ tls_connect_common(struct tls *ctx, const char *servername)
 	int rv = -1;
 
 	if ((ctx->flags & TLS_CLIENT) == 0) {
-		tls_set_errorx(ctx, "not a client context");
+		tls_set_errorx(ctx, TLS_ERROR_INVALID_CONTEXT,
+		    "not a client context");
 		goto err;
 	}
 
 	if (servername != NULL) {
 		if ((ctx->servername = strdup(servername)) == NULL) {
-			tls_set_errorx(ctx, "out of memory");
+			tls_set_errorx(ctx, TLS_ERROR_OUT_OF_MEMORY,
+			    "out of memory");
 			goto err;
 		}
 
@@ -203,7 +209,8 @@ tls_connect_common(struct tls *ctx, const char *servername)
 	}
 
 	if (ctx->config->ocsp_require_stapling != 0) {
-		tls_set_errorx(ctx, "OCSP stapling is not supported");
+		tls_set_errorx(ctx, TLS_ERROR_UNKNOWN,
+		    "OCSP stapling is not supported");
 		goto err;
 	}
 
@@ -236,7 +243,8 @@ tls_connect_common(struct tls *ctx, const char *servername)
 
 	if (ctx->config->verify_name) {
 		if (servername == NULL) {
-			tls_set_errorx(ctx, "server name not specified");
+			tls_set_errorx(ctx, TLS_ERROR_UNKNOWN,
+			    "server name not specified");
 			goto err;
 		}
 	}
@@ -263,7 +271,7 @@ tls_connect_fds(struct tls *ctx, int fd_read, int fd_write,
 	int rv = -1;
 
 	if (fd_read < 0 || fd_write < 0) {
-		tls_set_errorx(ctx, "invalid file descriptors");
+		tls_set_errorx(ctx, TLS_ERROR_UNKNOWN, "invalid file descriptors");
 		goto err;
 	}
 
@@ -291,7 +299,7 @@ tls_connect_cbs(struct tls *ctx, tls_read_cb read_cb,
 		goto err;
 
 	if (read_cb == NULL || write_cb == NULL) {
-		tls_set_errorx(ctx, "no callbacks provided");
+		tls_set_errorx(ctx, TLS_ERROR_UNKNOWN, "no callbacks provided");
 		goto err;
 	}
 	ctx->read_cb = read_cb;
