@@ -162,10 +162,26 @@ tls_get_peer_cert_subject(struct tls *ctx, char **subject)
 static int
 tls_get_peer_cert_common_name(struct tls *ctx, char **common_name)
 {
-	/* TODO: implement */
-	*common_name = NULL;
+	br_name_element *elt;
+
+	if (ctx->conn == NULL || ctx->conn->x509 == NULL)
+		return (-1);
+
+	elt = &ctx->conn->x509->subject_elts[TLS_DN_CN];
+	if (elt->status == -1) {
+		tls_set_errorx(ctx, TLS_ERROR_UNKNOWN, "error decoding CN");
+		goto err;
+	}
+	*common_name = strdup(elt->status == 1 ? elt->buf : "");
+	if (*common_name == NULL) {
+		tls_set_errorx(ctx, TLS_ERROR_OUT_OF_MEMORY, "out of memory");
+		goto err;
+	}
 
 	return (0);
+
+ err:
+	return (-1);
 }
 
 static int
