@@ -1,4 +1,4 @@
-/* $OpenBSD: tls_server.c,v 1.48 2022/01/19 11:10:55 inoguchi Exp $ */
+/* $OpenBSD: tls_server.c,v 1.49 2023/05/14 07:26:25 op Exp $ */
 /*
  * Copyright (c) 2014 Joel Sing <jsing@openbsd.org>
  *
@@ -21,6 +21,7 @@
 
 #include <errno.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <tls.h>
 #include "tls_internal.h"

@@ -1,4 +1,4 @@
-/* $OpenBSD: tls_signer.c,v 1.4 2022/02/01 17:18:38 jsing Exp $ */
+/* $OpenBSD: tls_signer.c,v 1.5 2023/04/09 18:26:26 tb Exp $ */
 /*
  * Copyright (c) 2021 Eric Faurot <eric@openbsd.org>
  *

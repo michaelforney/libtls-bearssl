@@ -1,4 +1,4 @@
-/* $OpenBSD: tls_bio_cb.c,v 1.20 2022/01/10 23:39:48 tb Exp $ */
+/* $OpenBSD: tls_bio_cb.c,v 1.21 2023/05/14 07:26:25 op Exp $ */
 /*
  * Copyright (c) 2016 Tobias Pape <tobias@netshed.de>
  *
@@ -18,6 +18,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include <tls.h>
