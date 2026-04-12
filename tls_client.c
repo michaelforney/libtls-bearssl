@@ -292,13 +292,8 @@ tls_connect_cbs(struct tls *ctx, tls_read_cb read_cb,
 	if (tls_connect_common(ctx, servername) != 0)
 		goto err;
 
-	if (read_cb == NULL || write_cb == NULL) {
-		tls_set_errorx(ctx, TLS_ERROR_UNKNOWN, "no callbacks provided");
+	if (tls_set_cbs(ctx, read_cb, write_cb, cb_arg) != 0)
 		goto err;
-	}
-	ctx->read_cb = read_cb;
-	ctx->write_cb = write_cb;
-	ctx->cb_arg = cb_arg;
 
 	rv = 0;
 
