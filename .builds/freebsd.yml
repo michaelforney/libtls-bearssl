@@ -4,4 +4,4 @@ packages:
 sources:
 - https://git.sr.ht/~mcf/libtls-bearssl
 tasks:
-- build: CFLAGS='-I /usr/local/include' LDFLAGS='-L /usr/local/lib' make -C libtls-bearssl CC=cc
+- build: CFLAGS='-I /usr/local/include' LDFLAGS='-L /usr/local/lib' make -C libtls-bearssl CC=cc all check

@@ -4,4 +4,4 @@ packages:
 sources:
 - https://git.sr.ht/~mcf/libtls-bearssl
 tasks:
-- build: make -C libtls-bearssl
+- build: make -C libtls-bearssl all check
