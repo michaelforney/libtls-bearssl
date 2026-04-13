@@ -1,5 +1,5 @@
 .POSIX:
-.PHONY: all install install-static install-shared clean
+.PHONY: all check install install-static install-shared clean
 .SUFFIXES: .c .o .lo
 
 -include config.mk
@@ -49,6 +49,14 @@ MAN=\
 	man/tls_ocsp_process_response.3\
 	man/tls_read.3
 
+TEST=\
+	test/configtest\
+	test/tlstest
+TESTLOG=$(TEST:%=%.log)
+TOBJ=\
+	$(TEST:%=%.o)\
+	$(TESTLOG)
+
 all: libtls.a libtls.so
 
 $(OBJ): tls.h tls_internal.h compat.h
@@ -74,6 +82,26 @@ libtls.pc: libtls.pc.in
 	    -e "s,@includedir@,$(INCDIR),"\
 	    libtls.pc.in >$@.tmp && mv $@.tmp $@
 
+test/configtest: test/configtest.o libtls.a
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ test/configtest.o libtls.a $(LDLIBS)
+test/tlstest: test/tlstest.o libtls.a
+	$(CC) $(LDFLAGS) -o $@ test/tlstest.o libtls.a $(LDLIBS)
+
+.PHONY: $(TESTLOG)
+test/configtest.log: test/configtest
+	@test/runtest $@ test/configtest
+test/tlstest.log: test/tlstest
+	@test/runtest $@ test/tlstest test/ca-root-rsa.pem test/server1-rsa-chain.pem test/server1-rsa.pem
+
+check: $(TEST) $(TESTLOG)
+	@fail=$$(grep -l '^# FAIL' $(TESTLOG) | wc -l); \
+	case "$$fail" in \
+	0) printf 'all tests passed!\n';; \
+	1) printf '1 test failed\n';; \
+	*) printf '%d tests failed\n';; \
+	esac; \
+	exit "$$fail"
+
 install-static: libtls.a
 	mkdir -p $(DESTDIR)$(LIBDIR)/
 	cp libtls.a $(DESTDIR)$(LIBDIR)/
@@ -93,4 +121,4 @@ install: libtls.a libtls.pc install-static install-shared
 	cp $(MAN) $(DESTDIR)$(MANDIR)/man3/
 
 clean:
-	rm -f libtls.a libtls.pc libtls.so libtls.ver $(OBJ) $(LOBJ)
+	rm -f libtls.a libtls.pc libtls.so libtls.ver $(OBJ) $(LOBJ) $(TEST) $(TOBJ)

@@ -2,5 +2,8 @@
 /libtls.pc
 /libtls.so
 /libtls.ver
+/test/configtest
+/test/tlstest
+/test/*.log
 *.o
 *.lo
