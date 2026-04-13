@@ -23,15 +23,15 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#include <openssl/x509.h>
-
 #include <tls.h>
 #include <tls_internal.h>
+
+#include "keypairdata.h"
 
 #define PUBKEY_HASH \
     "SHA256:f03c535d374614e7356c0a4e6fd37fe94297b60ed86212adcba40e8e0b07bc9f"
 
-char *cert_file, *key_file, *ocsp_staple_file;
+char *cert_file, *key_file;
 
 static void
 load_file(const char *filename, const uint8_t **data, size_t *data_len)
@@ -82,18 +82,49 @@ compare_mem(char *label, const uint8_t *data1, size_t data1_len,
 }
 
 static int
+compare_key(struct tls_keypair *kp, const br_rsa_private_key *rsa)
+{
+	if (kp->key_type != BR_KEYTYPE_RSA) {
+		fprintf(stderr, "FAIL: key type mismatch\n");
+		return -1;
+	}
+	if (rsa->n_bitlen != kp->key.rsa.n_bitlen) {
+		fprintf(stderr, "FAIL: key length mismatch (%"PRIu32" != %"PRIu32")\n",
+		    RSA.n_bitlen, kp->key.rsa.n_bitlen);
+		return -1;
+	}
+	if (compare_mem("key P", rsa->p, rsa->plen, kp->key.rsa.p,
+	    kp->key.rsa.plen) == -1)
+		return -1;
+	if (compare_mem("key Q", rsa->q, rsa->qlen, kp->key.rsa.q,
+	    kp->key.rsa.qlen) == -1)
+		return -1;
+	if (compare_mem("key DP", rsa->dp, rsa->dplen, kp->key.rsa.dp,
+	    kp->key.rsa.dplen) == -1)
+		return -1;
+	if (compare_mem("key DQ", rsa->dq, rsa->dqlen, kp->key.rsa.dq,
+	    kp->key.rsa.dqlen) == -1)
+		return -1;
+	if (compare_mem("key IQ", rsa->iq, rsa->iqlen, kp->key.rsa.iq,
+	    kp->key.rsa.iqlen) == -1)
+		return -1;
+	return 0;
+}
+
+static int
 do_keypair_tests(void)
 {
-	size_t cert_len, key_len, ocsp_staple_len;
-	const uint8_t *cert, *key, *ocsp_staple;
-	X509 *x509_cert = NULL;
+	size_t cert_len, key_len;
+	const uint8_t *cert, *key;
 	struct tls_keypair *kp;
 	struct tls_error err;
 	int failed = 1;
+	size_t i;
+
+	memset(&err, 0, sizeof(err));
 
 	load_file(cert_file, &cert, &cert_len);
 	load_file(key_file, &key, &key_len);
-	load_file(ocsp_staple_file, &ocsp_staple, &ocsp_staple_len);
 
 	if ((kp = tls_keypair_new()) == NULL) {
 		fprintf(stderr, "FAIL: failed to create keypair\n");
@@ -109,31 +140,30 @@ do_keypair_tests(void)
 		fprintf(stderr, "FAIL: failed to load key file: %s\n", err.msg);
 		goto done;
 	}
-	if (tls_keypair_set_ocsp_staple_file(kp, &err, ocsp_staple_file) == -1) {
-		fprintf(stderr, "FAIL: failed to load ocsp staple file: %s\n",
-		    err.msg);
+
+	if (kp->chain_len != CHAIN_LEN) {
+		fprintf(stderr, "FAIL: incorrect certificate chain length\n");
 		goto done;
 	}
+	for (i = 0; i < kp->chain_len; i++) {
+		if (compare_mem("certificate", CHAIN[i].data, CHAIN[i].data_len,
+		    kp->chain[i].data, kp->chain[i].data_len) == -1)
+			goto done;
+	}
+	if (compare_key(kp, &RSA) == -1)
+		goto done;
 
-	if (compare_mem("certificate", cert, cert_len, kp->cert_mem,
-	    kp->cert_len) == -1)
-		goto done;
-	if (compare_mem("key", key, key_len, kp->key_mem, kp->cert_len) == -1)
-		goto done;
-	if (compare_mem("ocsp staple", ocsp_staple, ocsp_staple_len,
-	    kp->ocsp_staple, kp->ocsp_staple_len) == -1)
-		goto done;
-	if (strcmp(kp->pubkey_hash, PUBKEY_HASH) != 0) {
-		fprintf(stderr, "FAIL: got pubkey hash '%s', want '%s'",
-		    kp->pubkey_hash, PUBKEY_HASH);
+	if (tls_keypair_check(kp, &err) != 0) {
+		fprintf(stderr, "FAIL: invalid certificate: %s\n",
+		    err.msg);
 		goto done;
 	}
 
 	tls_keypair_clear_key(kp);
 
-	if (kp->key_mem != NULL || kp->key_len != 0) {
-		fprintf(stderr, "FAIL: key not cleared (mem %p, len %zu)",
-		    kp->key_mem, kp->key_len);
+	if (kp->key_type != 0 || kp->key_data != NULL || kp->key_data_len != 0) {
+		fprintf(stderr, "FAIL: key not cleared (data %p, len %zu)",
+		    kp->key_data, kp->key_data_len);
 		goto done;
 	}
 
@@ -145,36 +175,30 @@ do_keypair_tests(void)
 		fprintf(stderr, "FAIL: failed to load key: %s\n", err.msg);
 		goto done;
 	}
-	if (tls_keypair_set_ocsp_staple_mem(kp, &err, ocsp_staple,
-	    ocsp_staple_len) == -1) {
-		fprintf(stderr, "FAIL: failed to load ocsp staple: %s\n", err.msg);
-		goto done;
-	}
-	if (compare_mem("certificate", cert, cert_len, kp->cert_mem,
-	    kp->cert_len) == -1)
-		goto done;
-	if (compare_mem("key", key, key_len, kp->key_mem, kp->cert_len) == -1)
-		goto done;
-	if (compare_mem("ocsp staple", ocsp_staple, ocsp_staple_len,
-	    kp->ocsp_staple, kp->ocsp_staple_len) == -1)
-		goto done;
-	if (strcmp(kp->pubkey_hash, PUBKEY_HASH) != 0) {
-		fprintf(stderr, "FAIL: got pubkey hash '%s', want '%s'",
-		    kp->pubkey_hash, PUBKEY_HASH);
-		goto done;
-	}
 
-	if (tls_keypair_load_cert(kp, &err, &x509_cert) == -1) {
-		fprintf(stderr, "FAIL: failed to load X509 certificate: %s\n",
+	if (kp->chain_len != sizeof(CHAIN) / sizeof(*CHAIN)) {
+		fprintf(stderr, "FAIL: incorrect certificate chain length\n");
+		goto done;
+	}
+	for (i = 0; i < kp->chain_len; i++) {
+		if (compare_mem("certificate", CHAIN[i].data, CHAIN[i].data_len,
+		    kp->chain[i].data, kp->chain[i].data_len) == -1)
+			goto done;
+	}
+	if (compare_key(kp, &RSA) == -1)
+		goto done;
+
+	if (tls_keypair_check(kp, &err) != 0) {
+		fprintf(stderr, "FAIL: invalid certificate: %s\n",
 		    err.msg);
 		goto done;
 	}
 
 	tls_keypair_clear_key(kp);
 
-	if (kp->key_mem != NULL || kp->key_len != 0) {
-		fprintf(stderr, "FAIL: key not cleared (mem %p, len %zu)",
-		    kp->key_mem, kp->key_len);
+	if (kp->key_type != 0 || kp->key_data != NULL || kp->key_data_len != 0) {
+		fprintf(stderr, "FAIL: key not cleared (data %p, len %zu)",
+		    kp->key_data, kp->key_data_len);
 		goto done;
 	}
 
@@ -182,10 +206,6 @@ do_keypair_tests(void)
 
  done:
 	tls_keypair_free(kp);
-	X509_free(x509_cert);
-	free((uint8_t *)cert);
-	free((uint8_t *)key);
-	free((uint8_t *)ocsp_staple);
 
 	return (failed);
 }
@@ -195,15 +215,14 @@ main(int argc, char **argv)
 {
 	int failure = 0;
 
-	if (argc != 4) {
-		fprintf(stderr, "usage: %s ocspstaplefile certfile keyfile\n",
+	if (argc != 3) {
+		fprintf(stderr, "usage: %s certfile keyfile\n",
 		    argv[0]);
 		return (1);
 	}
 
-	ocsp_staple_file = argv[1];
-	cert_file = argv[2];
-	key_file = argv[3];
+	cert_file = argv[1];
+	key_file = argv[2];
 
 	failure |= do_keypair_tests();
 

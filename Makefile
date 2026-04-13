@@ -51,9 +51,11 @@ MAN=\
 
 TEST=\
 	test/configtest\
+	test/keypairtest\
 	test/tlstest
 TESTLOG=$(TEST:%=%.log)
 TOBJ=\
+	test/keypairdata.h\
 	$(TEST:%=%.o)\
 	$(TESTLOG)
 
@@ -84,12 +86,19 @@ libtls.pc: libtls.pc.in
 
 test/configtest: test/configtest.o libtls.a
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ test/configtest.o libtls.a $(LDLIBS)
+test/keypairdata.h: test/server1-rsa.pem
+	{ brssl chain test/server1-rsa.pem && brssl skey -C test/server1-rsa.pem | sed 1d; } >$@ 2>/dev/null
+test/keypairtest.o: test/keypairdata.h
+test/keypairtest: test/keypairtest.o libtls.a
+	$(CC) $(LDFLAGS) -o $@ test/keypairtest.o libtls.a $(LDLIBS)
 test/tlstest: test/tlstest.o libtls.a
 	$(CC) $(LDFLAGS) -o $@ test/tlstest.o libtls.a $(LDLIBS)
 
 .PHONY: $(TESTLOG)
 test/configtest.log: test/configtest
 	@test/runtest $@ test/configtest
+test/keypairtest.log: test/keypairtest test/server1-rsa.pem
+	@test/runtest $@ test/keypairtest test/server1-rsa.pem test/server1-rsa.pem
 test/tlstest.log: test/tlstest
 	@test/runtest $@ test/tlstest test/ca-root-rsa.pem test/server1-rsa-chain.pem test/server1-rsa.pem
 

@@ -4,6 +4,7 @@
 /libtls.so
 /libtls.ver
 /test/configtest
+/test/keypairtest
 /test/tlstest
 /test/*.log
 *.o
