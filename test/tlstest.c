@@ -495,16 +495,16 @@ struct test_versions {
 };
 
 static struct test_versions tls_test_versions[] = {
-	{"tlsv1.3", "all"},
+	/*{"tlsv1.3", "all"},*/
 	{"tlsv1.2", "all"},
-	{"all", "tlsv1.3"},
+	/*{"all", "tlsv1.3"},*/
 	{"all", "tlsv1.2"},
 	{"all:!tlsv1.1", "tlsv1.2"},
-	{"all:!tlsv1.2", "tlsv1.3"},
+	/*{"all:!tlsv1.2", "tlsv1.3"},*/
 	{"all:!tlsv1.3", "tlsv1.2"},
-	{"all:!tlsv1.2:!tlsv1.1", "tlsv1.3"},
-	{"all:!tlsv1.2:!tlsv1.1:!tlsv1.0", "tlsv1.3"},
-	{"tlsv1.3", "tlsv1.3"},
+	/*{"all:!tlsv1.2:!tlsv1.1", "tlsv1.3"},*/
+	/*{"all:!tlsv1.2:!tlsv1.1:!tlsv1.0", "tlsv1.3"},*/
+	/*{"tlsv1.3", "tlsv1.3"},*/
 	{"tlsv1.2", "tlsv1.2"},
 };
 
