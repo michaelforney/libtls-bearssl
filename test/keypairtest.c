@@ -72,7 +72,7 @@ compare_mem(char *label, const uint8_t *data1, size_t data1_len,
 	}
 	if (data1 == data2) {
 		fprintf(stderr, "FAIL: %s comparing same memory (%p == %p)\n",
-		    label, data1, data2);
+		    label, (void *)data1, (void *)data2);
 		return -1;
 	}
 	if (memcmp(data1, data2, data1_len) != 0) {
@@ -164,7 +164,7 @@ do_keypair_tests(void)
 
 	if (kp->key_type != 0 || kp->key_data != NULL || kp->key_data_len != 0) {
 		fprintf(stderr, "FAIL: key not cleared (data %p, len %zu)",
-		    kp->key_data, kp->key_data_len);
+		    (void *)kp->key_data, kp->key_data_len);
 		goto done;
 	}
 
@@ -199,7 +199,7 @@ do_keypair_tests(void)
 
 	if (kp->key_type != 0 || kp->key_data != NULL || kp->key_data_len != 0) {
 		fprintf(stderr, "FAIL: key not cleared (data %p, len %zu)",
-		    kp->key_data, kp->key_data_len);
+		    (void *)kp->key_data, kp->key_data_len);
 		goto done;
 	}
 

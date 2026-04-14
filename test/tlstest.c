@@ -587,7 +587,8 @@ test_tls_alpn(const char *client_alpn, const char *server_alpn,
 
 	if (got_server == NULL || got_client == NULL) {
 		printf("FAIL: expected ALPN for server and client, got "
-		    "server: %p, client %p\n", got_server, got_client);
+		    "server: %p, client %p\n", (void *)got_server,
+		    (void *)got_client);
 		goto fail;
 	}
 
