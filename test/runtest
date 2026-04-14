@@ -1,0 +1,12 @@
+#!/bin/sh
+
+log=$1
+shift
+
+if { printf '# %s\n' "$*"; "$@"; } >"$log" 2>&1; then
+	printf '# PASS\n' >>"$log"
+	printf 'PASS\t%s\n' "$1"
+else
+	printf '# FAIL: exit status %d\n' "$?" >>"$log"
+	printf 'FAIL\t%s\n' "$1"
+fi
