@@ -56,7 +56,6 @@ TEST=\
 	test/verifytest
 TESTLOG=$(TEST:%=%.log)
 TOBJ=\
-	test/keypairdata.h\
 	$(TEST:%=%.o)\
 	$(TESTLOG)
 
