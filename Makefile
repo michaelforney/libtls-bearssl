@@ -52,7 +52,8 @@ MAN=\
 TEST=\
 	test/configtest\
 	test/keypairtest\
-	test/tlstest
+	test/tlstest\
+	test/verifytest
 TESTLOG=$(TEST:%=%.log)
 TOBJ=\
 	test/keypairdata.h\
@@ -93,6 +94,8 @@ test/keypairtest: test/keypairtest.o libtls.a
 	$(CC) $(LDFLAGS) -o $@ test/keypairtest.o libtls.a $(LDLIBS)
 test/tlstest: test/tlstest.o libtls.a
 	$(CC) $(LDFLAGS) -o $@ test/tlstest.o libtls.a $(LDLIBS)
+test/verifytest: test/verifytest.o libtls.a
+	$(CC) $(LDFLAGS) -o $@ test/verifytest.o libtls.a -l x509cert $(LDLIBS)
 
 .PHONY: $(TESTLOG)
 test/configtest.log: test/configtest
@@ -101,6 +104,8 @@ test/keypairtest.log: test/keypairtest test/server1-rsa.pem
 	@test/runtest $@ test/keypairtest test/server1-rsa.pem test/server1-rsa.pem
 test/tlstest.log: test/tlstest
 	@test/runtest $@ test/tlstest test/ca-root-rsa.pem test/server1-rsa-chain.pem test/server1-rsa.pem
+test/verifytest.log: test/verifytest
+	@test/runtest $@ test/verifytest
 
 check: $(TEST) $(TESTLOG)
 	@fail=$$(grep -l '^# FAIL' $(TESTLOG) | wc -l); \

@@ -6,6 +6,7 @@
 /test/configtest
 /test/keypairtest
 /test/tlstest
+/test/verifytest
 /test/*.log
 *.o
 *.lo
