@@ -107,13 +107,13 @@ test/verifytest.log: test/verifytest
 	@test/runtest $@ test/verifytest
 
 check: $(TEST) $(TESTLOG)
-	@fail=$$(grep -l '^# FAIL' $(TESTLOG) | wc -l); \
-	case "$$fail" in \
+	@set -- $$(grep -l '^# FAIL' $(TESTLOG)); \
+	case "$$#" in \
 	0) printf 'all tests passed!\n';; \
 	1) printf '1 test failed\n';; \
 	*) printf '%d tests failed\n';; \
 	esac; \
-	exit "$$fail"
+	exit "$$#"
 
 install-static: libtls.a
 	mkdir -p $(DESTDIR)$(LIBDIR)/
