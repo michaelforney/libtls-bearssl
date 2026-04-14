@@ -2,6 +2,7 @@ image: freebsd/latest
 packages:
 - bearssl
 environment:
+  CC: cc
   CFLAGS: -I /usr/local/include
   LDFLAGS: -L /usr/local/lib
 sources:
@@ -9,4 +10,4 @@ sources:
 - https://git.sr.ht/~mcf/x509cert#0.5
 tasks:
 - x509cert: cd x509cert && make && sudo make install
-- build: make -C libtls-bearssl CC=cc all check
+- build: make -C libtls-bearssl all check
