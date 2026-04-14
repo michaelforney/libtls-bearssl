@@ -107,11 +107,11 @@ test/verifytest.log: test/verifytest
 	@test/runtest $@ test/verifytest
 
 check: $(TEST) $(TESTLOG)
-	@set -- $$(grep -l '^# FAIL' $(TESTLOG)); \
+	@set -- $$(grep -l '^# FAIL' $(TESTLOG) || :); \
 	case "$$#" in \
 	0) printf 'all tests passed!\n';; \
 	1) printf '1 test failed\n';; \
-	*) printf '%d tests failed\n';; \
+	*) printf '%d tests failed\n' "$$#";; \
 	esac; \
 	exit "$$#"
 
