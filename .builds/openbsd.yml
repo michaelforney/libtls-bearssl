@@ -2,7 +2,16 @@ image: openbsd/latest
 sources:
 - https://git.sr.ht/~mcf/libtls-bearssl
 - https://www.bearssl.org/git/BearSSL#v0.6
+- https://git.sr.ht/~mcf/x509cert#0.5
+environment:
+  CFLAGS: -I /usr/local/include
+  LDFLAGS: -L /usr/local/lib
 tasks:
-- build: |
-    make -C BearSSL
-    CFLAGS="-I $PWD/BearSSL/inc" LDFLAGS="-L $PWD/BearSSL/build" make -C libtls-bearssl all check
+- bearssl: |
+    cd BearSSL
+    make
+    doas cp inc/*.h /usr/local/include/
+    doas cp build/libbearssl.* /usr/local/lib
+    doas cp build/brssl /usr/local/bin
+- x509cert: cd x509cert && make && doas make install
+- build: make -C libtls-bearssl all check

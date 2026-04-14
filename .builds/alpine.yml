@@ -3,5 +3,7 @@ packages:
 - bearssl-dev
 sources:
 - https://git.sr.ht/~mcf/libtls-bearssl
+- https://git.sr.ht/~mcf/x509cert#0.5
 tasks:
+- x509cert: cd x509cert && make && sudo make install
 - build: make -C libtls-bearssl all check
