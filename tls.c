@@ -365,20 +365,8 @@ x509_end_chain(const br_x509_class **vtable)
 	unsigned err;
 
 	err = x509->minimal.vtable->end_chain(&x509->minimal.vtable);
-	switch (err) {
-	case BR_ERR_X509_EXPIRED:
-		if (ctx->config->verify_time == 0)
-			err = BR_ERR_OK;
-		break;
-	case BR_ERR_X509_BAD_SERVER_NAME:
-		if (ctx->config->verify_name == 0)
-			err = BR_ERR_OK;
-		break;
-	case BR_ERR_X509_NOT_TRUSTED:
-		if (ctx->config->verify_cert == 0)
-			err = BR_ERR_OK;
-		break;
-	}
+	if (err == BR_ERR_X509_NOT_TRUSTED && ctx->config->verify_cert == 0)
+		err = BR_ERR_OK;
 
 	if (x509->depth > ctx->config->verify_depth + 2) {
 		err = BR_ERR_X509_LIMIT_EXCEEDED;
