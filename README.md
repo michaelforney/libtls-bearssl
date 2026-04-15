@@ -32,9 +32,11 @@ they are not supported by BearSSL.
   will fail.
 - Inspecting peer certificate issuer name. `tls_peer_cert_issuer`
   always returns `NULL`.
-- Inspecting peer certificate notBefore and notAfter times.
-  `tls_peer_cert_notbefore` and `tls_peer_cert_notafter` always
-  return `-1`.
+- Inspecting peer certificate notBefore and notAfter times requires
+  a BearSSL version supporting `BR_FEATURE_X509_TIME_CALLBACK`.
+  This is currently not available in any released version of BearSSL,
+  and if it is missing, `tls_peer_cert_notbefore` and
+  `tls_peer_cert_notafter` always return `-1`.
 - Encrypted key files. If `tls_load_file` is passed a password
   string, it will return `NULL`.
 - Session caching. BearSSL does implement this (though not session
