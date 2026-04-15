@@ -54,7 +54,6 @@ struct verify_test verify_tests[] = {
 		.want_return = 0,
 		.want_match = 1,
 	},
-#if 0
 	{
 		/* Zero length name - non-matching. */
 		.common_name = "www.openbsd.org",
@@ -63,7 +62,6 @@ struct verify_test verify_tests[] = {
 		.want_return = 0,
 		.want_match = 0,
 	},
-#endif
 	{
 		/* CN wildcard without SANs - matching. */
 		.common_name = "*.openbsd.org",

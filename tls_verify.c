@@ -24,6 +24,11 @@ tls_check_name(struct tls *ctx, br_x509_certificate *cert, const char *name, int
 	br_x509_minimal_context xc;
 	unsigned err;
 
+	if (name == NULL || *name == '\0') {
+		*match = 0;
+		return 0;
+	}
+
 	br_x509_minimal_init_full(&xc, NULL, 0);
 	xc.vtable->start_chain(&xc.vtable, name);
 	xc.vtable->start_cert(&xc.vtable, cert->data_len);

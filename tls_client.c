@@ -172,7 +172,7 @@ tls_connect_common(struct tls *ctx, const char *servername)
 		goto err;
 	}
 
-	if (servername != NULL) {
+	if (servername != NULL && *servername != '\0') {
 		if ((ctx->servername = strdup(servername)) == NULL) {
 			tls_set_errorx(ctx, TLS_ERROR_OUT_OF_MEMORY,
 			    "out of memory");
@@ -200,6 +200,8 @@ tls_connect_common(struct tls *ctx, const char *servername)
 		} else {
 			servername = NULL;
 		}
+	} else {
+		servername = NULL;
 	}
 
 	if (ctx->config->ocsp_require_stapling != 0) {
