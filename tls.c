@@ -297,7 +297,7 @@ x509_start_chain(const br_x509_class **vtable, const char *server_name)
 {
 	struct tls_x509 *x509 = TLS_CONTAINER_OF(vtable, struct tls_x509, vtable);
 
-	if (!x509->ctx->config->verify_name)
+	if (x509->ctx->config->verify_name == 0)
 		server_name = NULL;
 	x509->depth = 0;
 	x509->notbefore = -1;
