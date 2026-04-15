@@ -312,7 +312,8 @@ x509_start_cert(const br_x509_class **vtable, uint32_t length)
 	struct tls *ctx = x509->ctx;
 	br_x509_certificate *chain, *cert;
 
-	++x509->depth;
+	if (x509->depth > ctx->config->verify_depth)
+		return;
 	x509->minimal.vtable->start_cert(&x509->minimal.vtable, length);
 
 	if (ctx->error.tls == 0) {
@@ -342,6 +343,8 @@ x509_append(const br_x509_class **vtable, const unsigned char *buf, size_t len)
 	struct tls *ctx = x509->ctx;
 	br_x509_certificate *cert = &ctx->peer_chain[ctx->peer_chain_len - 1];
 
+	if (x509->depth > ctx->config->verify_depth)
+		return;
 	if (ctx->error.tls == 0) {
 		memcpy(cert->data + cert->data_len, buf, len);
 		cert->data_len += len;
@@ -353,8 +356,12 @@ static void
 x509_end_cert(const br_x509_class **vtable)
 {
 	struct tls_x509 *x509 = TLS_CONTAINER_OF(vtable, struct tls_x509, vtable);
+	struct tls *ctx = x509->ctx;
 
+	if (x509->depth > ctx->config->verify_depth)
+		return;
 	x509->minimal.vtable->end_cert(&x509->minimal.vtable);
+	++x509->depth;
 }
 
 static unsigned
@@ -367,11 +374,6 @@ x509_end_chain(const br_x509_class **vtable)
 	err = x509->minimal.vtable->end_chain(&x509->minimal.vtable);
 	if (err == BR_ERR_X509_NOT_TRUSTED && ctx->config->verify_cert == 0)
 		err = BR_ERR_OK;
-
-	if (x509->depth > ctx->config->verify_depth + 2) {
-		err = BR_ERR_X509_LIMIT_EXCEEDED;
-		goto out;
-	}
 
 	if (x509->ctx->error.tls) {
 		/* out of memory when allocating certificate chain */
@@ -472,7 +474,7 @@ tls_time_cb(void *aux, uint32_t nbd, uint32_t nbs, uint32_t nad, uint32_t nas)
 	time_t now;
 	uint32_t nowdays, nowsecs;
 
-	if (x509->depth == 1) {
+	if (x509->depth == 0) {
 		/* Save validity period for tls_conninfo. */
 		x509->notbefore = 86400LL * (nbd - 719528) + nbs;
 		x509->notafter = 86400LL * (nad - 719528) + nas;
