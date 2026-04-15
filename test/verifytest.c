@@ -121,7 +121,7 @@ struct verify_test verify_tests[] = {
 		.want_match = 0,
 	},
 #if 0
-	/* XXX: Should BearSSL accept wildcards under TLD? */
+	/* XXX: Should BearSSL reject wildcards under TLD? */
 	{
 		/* CN wildcard without SANs - invalid CN wildcard. */
 		.common_name = "*.org",
@@ -140,7 +140,7 @@ struct verify_test verify_tests[] = {
 		.want_match = 1,
 	},
 #if 0
-	/* XXX: Should BearSSL accept IP address wildcards? */
+	/* IP address server names are rejected during tls_connect_common. */
 	{
 		/* CN IPv4 wildcard without SANS - invalid IP wildcard. */
 		.common_name = "*.2.3.4",
@@ -172,7 +172,7 @@ struct verify_test verify_tests[] = {
 		.want_match = 0,
 	},
 #if 0
-	/* XXX: Should BearSSL accept zero-length wildcards */
+	/* XXX: Should BearSSL reject zero-length wildcards? */
 	{
 		/* CN wildcard without SANs - invalid non-matching name. */
 		.common_name = "*.openbsd.org",
@@ -306,7 +306,7 @@ struct verify_test verify_tests[] = {
 		.want_match = 0,
 	},
 #if 0
-	/* BearSSL doesn't check if the domain name is an IP address */
+	/* IP address server names are rejected during tls_connect_common. */
 	{
 		/* CN with SANs - non-matching IPv4 due to GEN_DNS SAN. */
 		.common_name = "www.openbsd.org",
@@ -327,7 +327,7 @@ struct verify_test verify_tests[] = {
 	},
 #endif
 #if 0
-	/* BearSSL doesn't support iPAddress SANs */
+	/* IP address server names are rejected during tls_connect_common. */
 	{
 		/* CN with SANs - matching IPv4 on GEN_IPADD SAN. */
 		.common_name = "www.openbsd.org",
@@ -348,7 +348,7 @@ struct verify_test verify_tests[] = {
 	},
 #endif
 #if 0
-	/* BearSSL doesn't support iPAddress SANs */
+	/* IP address server names are rejected during tls_connect_common. */
 	{
 		/* CN with SANs - matching IPv6 on GEN_IPADD SAN. */
 		.common_name = "www.openbsd.org",
