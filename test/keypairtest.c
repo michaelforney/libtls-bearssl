@@ -35,7 +35,7 @@
 char *cert_file, *key_file;
 
 static void
-load_file(const char *filename, const uint8_t **data, size_t *data_len)
+load_file(const char *filename, uint8_t **data, size_t *data_len)
 {
 	struct stat sb;
 	uint8_t *buf;
@@ -116,7 +116,7 @@ static int
 do_keypair_tests(void)
 {
 	size_t cert_len, key_len;
-	const uint8_t *cert, *key;
+	uint8_t *cert, *key;
 	struct tls_keypair *kp;
 	struct tls_error err = { 0 };
 	int failed = 1;
@@ -205,6 +205,8 @@ do_keypair_tests(void)
 
  done:
 	tls_keypair_free(kp);
+	free(cert);
+	free(key);
 
 	return (failed);
 }

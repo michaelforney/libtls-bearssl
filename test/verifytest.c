@@ -581,6 +581,7 @@ do_verify_test(int test_no, struct verify_test *vt)
 	failed = 0;
 
  done:
+	free(cert.data);
 	tls_free(tls);
 
 	return (failed);
