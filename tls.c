@@ -319,7 +319,7 @@ x509_start_cert(const br_x509_class **vtable, uint32_t length)
 	if (ctx->error.tls == 0) {
 		if ((chain = reallocarray(ctx->peer_chain, ctx->peer_chain_len + 1,
 		    sizeof(chain[0]))) == NULL) {
-			tls_set_error(ctx, TLS_ERROR_OUT_OF_MEMORY,
+			tls_set_errorx(ctx, TLS_ERROR_OUT_OF_MEMORY,
 			    "out of memory");
 			return;
 		}
@@ -329,7 +329,7 @@ x509_start_cert(const br_x509_class **vtable, uint32_t length)
 		cert = &chain[ctx->peer_chain_len - 1];
 		cert->data_len = 0;
 		if ((cert->data = calloc(1, length)) == NULL) {
-			tls_set_error(ctx, TLS_ERROR_OUT_OF_MEMORY,
+			tls_set_errorx(ctx, TLS_ERROR_OUT_OF_MEMORY,
 			    "out of memory");
 			return;
 		}
@@ -505,7 +505,7 @@ tls_configure_x509(struct tls *ctx)
 		goto err;
 
 	if ((x509 = calloc(1, sizeof(*x509))) == NULL) {
-		tls_set_error(ctx, TLS_ERROR_OUT_OF_MEMORY, "out of memory");
+		tls_set_errorx(ctx, TLS_ERROR_OUT_OF_MEMORY, "out of memory");
 		goto err;
 	}
 

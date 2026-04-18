@@ -89,7 +89,7 @@ append_cert(void *data, const void *src, size_t len)
 	}
 	if (ctx->cap != cap) {
 		if ((buf = realloc(ctx->buf, cap)) == NULL) {
-			tls_error_set(ctx->error, TLS_ERROR_OUT_OF_MEMORY,
+			tls_error_setx(ctx->error, TLS_ERROR_OUT_OF_MEMORY,
 			    "out of memory");
 			return;
 		}
@@ -128,7 +128,7 @@ tls_keypair_set_cert_mem(struct tls_keypair *keypair, struct tls_error *error,
 			}
 			++chain_len;
 			if ((new_chain = reallocarray(chain, chain_len, sizeof(chain[0]))) == NULL) {
-				tls_error_set(error, TLS_ERROR_OUT_OF_MEMORY,
+				tls_error_setx(error, TLS_ERROR_OUT_OF_MEMORY,
 				    "out of memory");
 				goto err;
 			}
@@ -141,7 +141,7 @@ tls_keypair_set_cert_mem(struct tls_keypair *keypair, struct tls_error *error,
 			if (cert == NULL)
 				break;
 			if ((cert->data = malloc(ctx.len)) == NULL) {
-				tls_error_set(error, TLS_ERROR_OUT_OF_MEMORY,
+				tls_error_setx(error, TLS_ERROR_OUT_OF_MEMORY,
 				    "certificate data");
 				goto err;
 			}
@@ -262,7 +262,7 @@ tls_keypair_set_key_mem(struct tls_keypair *keypair, struct tls_error *error,
 		rsa = br_skey_decoder_get_rsa(&kc);
 		data_len = rsa->plen + rsa->qlen + rsa->dplen + rsa->dqlen + rsa->iqlen;
 		if ((data = malloc(data_len)) == NULL) {
-			tls_error_set(error, TLS_ERROR_OUT_OF_MEMORY,
+			tls_error_setx(error, TLS_ERROR_OUT_OF_MEMORY,
 			    "out of memory");
 			goto err;
 		}
@@ -293,7 +293,7 @@ tls_keypair_set_key_mem(struct tls_keypair *keypair, struct tls_error *error,
 		ec = br_skey_decoder_get_ec(&kc);
 		data_len = ec->xlen;
 		if ((data = malloc(data_len)) == NULL) {
-			tls_error_set(error, TLS_ERROR_OUT_OF_MEMORY,
+			tls_error_setx(error, TLS_ERROR_OUT_OF_MEMORY,
 			    "out of memory");
 			goto err;
 		}

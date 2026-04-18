@@ -676,7 +676,7 @@ bearssl_load_ca(struct tls_error *error, const uint8_t *mem, size_t len, br_x509
 
 			/* fill in trust anchor DN and public key data */
 			if ((ta->dn.data = malloc(ta_size)) == NULL) {
-				tls_error_set(error, TLS_ERROR_OUT_OF_MEMORY,
+				tls_error_setx(error, TLS_ERROR_OUT_OF_MEMORY,
 				    "out of memory");
 				goto err;
 			}
