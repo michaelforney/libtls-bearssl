@@ -1,4 +1,4 @@
-/* $OpenBSD: tls.c,v 1.104 2024/04/08 20:47:32 tb Exp $ */
+/* $OpenBSD: tls.c,v 1.105 2026/04/16 07:28:00 tb Exp $ */
 /*
  * Copyright (c) 2014 Joel Sing <jsing@openbsd.org>
  *

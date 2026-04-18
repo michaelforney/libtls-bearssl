@@ -1,4 +1,4 @@
-/* $OpenBSD: tls_conninfo.c,v 1.28 2024/12/10 08:40:30 tb Exp $ */
+/* $OpenBSD: tls_conninfo.c,v 1.29 2026/03/28 11:33:33 tb Exp $ */
 /*
  * Copyright (c) 2015 Joel Sing <jsing@openbsd.org>
  * Copyright (c) 2015 Bob Beck <beck@openbsd.org>

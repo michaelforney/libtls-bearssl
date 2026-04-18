@@ -1,4 +1,4 @@
-/* $OpenBSD: tls_verify.c,v 1.32 2024/12/10 08:40:30 tb Exp $ */
+/* $OpenBSD: tls_verify.c,v 1.33 2026/03/28 11:33:33 tb Exp $ */
 /*
  * Copyright (c) 2014 Jeremie Courreges-Anglas <jca@openbsd.org>
  *
