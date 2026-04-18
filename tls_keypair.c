@@ -76,8 +76,17 @@ append_cert(void *data, const void *src, size_t len)
 	if (ctx->error->tls)
 		return;
 	cap = ctx->cap;
-	while (cap - ctx->len < len)
-		cap = ctx->cap ? ctx->cap * 2 : 1024;
+	while (cap - ctx->len < len) {
+		if (cap == 0) {
+			cap = 1024;
+		} else if (cap <= SIZE_MAX / 2) {
+			cap = cap * 2;
+		} else {
+			tls_error_setx(ctx->error, TLS_ERROR_OUT_OF_MEMORY,
+			    "out of memory");
+			return;
+		}
+	}
 	if (ctx->cap != cap) {
 		if ((buf = realloc(ctx->buf, cap)) == NULL) {
 			tls_error_set(ctx->error, TLS_ERROR_OUT_OF_MEMORY,
