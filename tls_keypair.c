@@ -27,6 +27,18 @@ tls_keypair_new(void)
 	return calloc(1, sizeof(struct tls_keypair));
 }
 
+static void
+tls_keypair_clear_cert(struct tls_keypair *keypair)
+{
+	size_t i;
+
+	for (i = 0; i < keypair->chain_len; ++i)
+		free(keypair->chain[i].data);
+	free(keypair->chain);
+	keypair->chain = NULL;
+	keypair->chain_len = 0;
+}
+
 void
 tls_keypair_clear_key(struct tls_keypair *keypair)
 {
@@ -44,6 +56,8 @@ tls_keypair_set_cert_file(struct tls_keypair *keypair, struct tls_error *error,
 	int rv = -1;
 	char *cert = NULL;
 	size_t len;
+
+	tls_keypair_clear_cert(keypair);
 
 	if (tls_config_load_file(error, "certificate", cert_file,
 	    &cert, &len) == -1)
@@ -111,6 +125,8 @@ tls_keypair_set_cert_mem(struct tls_keypair *keypair, struct tls_error *error,
 	br_x509_certificate *chain = NULL, *new_chain, *cert = NULL;
 	size_t chain_len = 0;
 	int rv = -1;
+
+	tls_keypair_clear_cert(keypair);
 
 	br_pem_decoder_init(&pc);
 	while (len > 0) {
@@ -413,16 +429,11 @@ tls_keypair_check(struct tls_keypair *keypair, struct tls_error *error)
 void
 tls_keypair_free(struct tls_keypair *keypair)
 {
-	size_t i;
-
 	if (keypair == NULL)
 		return;
 
+	tls_keypair_clear_cert(keypair);
 	tls_keypair_clear_key(keypair);
-
-	for (i = 0; i < keypair->chain_len; ++i)
-		free(keypair->chain[i].data);
-	free(keypair->chain);
 
 	free(keypair);
 }
