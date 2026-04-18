@@ -126,14 +126,14 @@ tls_keypair_set_cert_mem(struct tls_keypair *keypair, struct tls_error *error,
 				cert = NULL;
 				break;
 			}
-			++chain_len;
-			if ((new_chain = reallocarray(chain, chain_len, sizeof(chain[0]))) == NULL) {
+			if ((new_chain = reallocarray(chain, chain_len + 1, sizeof(chain[0]))) == NULL) {
 				tls_error_setx(error, TLS_ERROR_OUT_OF_MEMORY,
 				    "out of memory");
 				goto err;
 			}
 			chain = new_chain;
-			cert = &chain[chain_len - 1];
+			cert = &chain[chain_len++];
+			cert->data = NULL;
 			br_pem_decoder_setdest(&pc, append_cert, &ctx);
 			ctx.len = 0;
 			break;
@@ -163,10 +163,13 @@ tls_keypair_set_cert_mem(struct tls_keypair *keypair, struct tls_error *error,
 	keypair->chain = chain;
 	keypair->chain_len = chain_len;
 	chain = NULL;
+	chain_len = 0;
 
 	rv = 0;
 
  err:
+	while (chain_len > 0)
+		free(chain[--chain_len].data);
 	free(chain);
 	free(ctx.buf);
 
