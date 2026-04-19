@@ -797,6 +797,12 @@ tls_write(struct tls *ctx, const void *buf, size_t buflen)
 			goto out;
 	}
 
+	if (ctx->conn->write_len != 0 && ctx->conn->write_len > buflen) {
+		tls_set_errorx(ctx, TLS_ERROR_INVALID_ARGUMENT,
+		    "invalid write retry");
+		goto out;
+	}
+
 	for (;;) {
 		if ((rv = tls_run_until(ctx, BR_SSL_SENDAPP, 0, "write")) == 0) {
 			tls_set_ssl_errorx(ctx, TLS_ERROR_UNKNOWN,
